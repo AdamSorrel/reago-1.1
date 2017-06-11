@@ -1,9 +1,11 @@
 import os
+import os.path
 import sys
 import time
 import networkx as nx
 #import pygraphviz as pgv
 import operator
+import json
 
 # Imports global variables
 import globalVariables as g
@@ -13,17 +15,24 @@ import globalVariables as g
 ###################################################################################
 
 class JSONObject:
+    # Initialising empty dictionary
     def __init__(self):
         self.__dict__ = {}
     def update(self, d):
+    # If it exist, and old key is removed and replaced by the new one
+        for key in d:
+            if key in self.__dict__:
+                del self.__dict__[key]
         d.update(self.__dict__)
         self.__dict__ = d
     def read(self, input):
+    # Reading a json file.
         with open(input, 'r') as fj:
             d = json.load(fj)
             d.update(self.__dict__)
             self.__dict__ = d
     def write(self, output):
+    # Writing a json file
         with open(output, 'w') as fj:
             json.dump(self.__dict__, fj, ensure_ascii=False)
 
@@ -1080,14 +1089,72 @@ def scaffold(scaffold_candidates):
 
 
 def parseInput(args):
-
     # Retrieving an input file
-    g.filename = args.IN
+
+    # Creating a json object containing user settings
+    variables = JSONObject()
+
+    try:
+        variables.read('settings.json')
+    except:
+        print("No settings file was found.")
+
+    ##############################################################################################
+    # Input file
+    # Default value of the 'input' argument is 'None', given that user didnot specify input, let's check settings file.
+    if args.IN == None:
+        try:
+            # If settings file contains input file, we're good to go.
+            variables.filename
+        except:
+                print('ERROR: Please specify an input file path using token -i/--input.')
+                quit()
+    # User have specified input file.
+    else:
+        variables.update({'filename':args.IN})
+
+    # Checking whether input file exists
+    if os.path.isfile(variables.filename) == False:
+        print('ERROR: Input file', '\"' + variables.filename + '\"','does not exist. Please double check the path and filename in the -i/--input token or the \"settings.json\" file.')
+        quit()
+
+    ##############################################################################################
+    # Output folder
+    # Default value of the 'output' argument is 'None', given that user didnot specify input, let's check settings file.
+    if args.OUT == None:
+        try:
+            # If settings file contains output file, we're good to go.
+            variables.output_dir
+            # Adding a slash behind the output folder should it not already contain one
+            if variables.output_dir[-1] != "/":
+                variables.output_dir += "/"
+        except:
+                print('ERROR: Please specify an output directory path using token -i/--input.')
+                quit()
+    # User have specified output file.
+    else:
+        variables.update({'output_dir':args.OUT})
+        # Check if output contains slash and if not add it
+        if variables.output_dir[-1] != "/":
+            variables.output_dir += "/"
+
+    # Checking whether input file exists and if not, creating it.
+    if os.path.isdir(variables.output_dir) == False:
+        os.mkdir(variables.output_dir)
+
+    variables.write('settings.json')
+    quit()
+
+
+
+
+    # If readjoiner (rj) directory doesn't exist yet, it will be generated.
+    if os.path.exists(g.rj_dir) == False:
+        os.mkdir(g.rj_dir)
+
+    #import pdb; pdb.set_trace()
     # Retrieving an output folder
     g.output_dir = args.OUT
-    # Adding a slash behind the output folder should it not already contain one
-    if g.output_dir[-1] != "/":
-        g.output_dir += "/"
 
     # Error: Input file doesn't exist.
     if os.path.exists(g.filename) == False:
@@ -1111,13 +1178,6 @@ def parseInput(args):
     g.full_genes_path = g.output_dir + "full_genes.fasta"
     g.fragments_path = g.output_dir + "fragments.fasta"
 
-    # If output directory doesn't exist yet, it will be generated.
-    if os.path.exists(g.output_dir) == False:
-        os.mkdir(g.output_dir)
-
-    # If readjoiner (rj) directory doesn't exist yet, it will be generated.
-    if os.path.exists(g.rj_dir) == False:
-        os.mkdir(g.rj_dir)
 
 # for testing purpose
 def draw_graph(graph, filename):
