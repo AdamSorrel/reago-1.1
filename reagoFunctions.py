@@ -1,3 +1,4 @@
+import h5py
 import os
 import os.path
 import sys
@@ -11,7 +12,7 @@ import json
 import globalVariables as g
 
 ###############################################################################
-# JSON object definition
+# Classes definition
 ###################################################################################
 
 class JSONObject:
@@ -36,6 +37,23 @@ class JSONObject:
         with open(output, 'w') as fj:
             json.dump(self.__dict__, fj, ensure_ascii=False,separators=(',\n', ':'))
 
+class databases:
+    def __init__(self):
+    # Initialising a list of database names
+        self.__dict__ = {}
+    #def dt(self):
+        # Setting up a special dtype
+        #self.dt = h5py.special_dtype(vlen=bytes)
+    def newGroup(self, name, db):
+        # If it exist, and old key is removed and replaced by the new one
+        if name in self.__dict__:
+                del self.__dict__[name]
+    def add(self, name, seq):
+        length = len(seq)
+        d = {name : db.create_dataset(name, shape=(100,), dtype=h5py.special_dtype(vlen=bytes))}
+        d.update(self.__dict__)
+        self.__dict__ = d
+
 ###############################################################################
 # Function definitions
 ###################################################################################
@@ -59,7 +77,7 @@ def write_frag(data, variables):
             frag_cnt += 1
 
 # Function receiving the input file handle
-def get_fa(variables):
+def get_fa(variables, dat):
     # Initializing dictionaries
     # r:id and read dictionary
     # cm_pos : id and template position dictionary
@@ -75,15 +93,16 @@ def get_fa(variables):
                 # read id, template start, template end, query start, query end
                 read_id, m_st, m_ed, s_st, s_ed = line[1:].split()
                 # sequence database value is saved empty for now
-                variables.read_db[read_id] = ""
+                dat.read_db[read_id] = ""
                 # query database start and end
                 variables.r_pos[read_id] = [int(s_st), int(s_ed)]
                 # template database start and end
                 variables.cm_pos[read_id] = [int(m_st), int(m_ed)]
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
-                g.read_db[read_id] += line[:-1]
-                
+                import pdb; pdb.set_trace()
+                dat.read_db[read_id] = line[:-1]
+
     #return g.read_db, g.r_pos, g.cm_pos
 
 def write_fa(sequence_container,filename, width):
@@ -122,20 +141,20 @@ def n_read_in_node(node):
     read_list = node.split("|")
     return len(read_list)
 
-def initialize_read_pos():
+def initialize_read_pos(variables, dat):
     # This function starts a database with read ids and position 0 for each on of them.
     # Retreaves keys from the read database
-    for read_id in g.read_db:
+    for read_id in dat.read_db:
         # Sets zero for each of the keys
-        g.read_position_db[read_id] = 0
+        variables.read_position_db[read_id] = 0
     return None
 
-def combine_duplicated_reads():
+def combine_duplicated_reads(dat):
     # Dereplicates database reads
     sequence_to_read_id = {}
     # Iterating through the read_db and saving seq to a new dictionary
     # If sequence already exists in a dictionary, it's not passed in anymore
-    for seq_id, seq in g.read_db.items():
+    for seq_id, seq in dat.read_db.items():
         if seq not in sequence_to_read_id:
             sequence_to_read_id[seq] = []
         # Read ids of dereplicated sequences are appended to the original key as a list
@@ -149,11 +168,11 @@ def combine_duplicated_reads():
         # Saving in the new database
         read_db_cleaned[new_id] = seq
 
-    g.read_db = read_db_cleaned
+    dat.read_db = read_db_cleaned
 
     return None
 
-def create_graph_using_rj(graph_fn):
+def create_graph_using_rj(graph_fn, variables, dat):
     # Wrapper function for the readjoiner
     # Accepts the dereplicated read database + graph_fn ("graph")
 
@@ -165,7 +184,7 @@ def create_graph_using_rj(graph_fn):
     # Generated output file directory
     non_dup_fn = g.rj_dir + graph_fn + ".fasta"
     # Saving sequence database in a file using width 0, which means saving the whole sequence.
-    write_fa(g.read_db,non_dup_fn, 0)
+    write_fa(dat.read_db,non_dup_fn, 0)
 
     # This following functions generates files 'graph.fasta', 'graph.set.des', 'graph.set.esq', 'graph.set.rit' and 'graph.set.sds'
     # 'graph.fasta' is dereplicated file
@@ -174,9 +193,9 @@ def create_graph_using_rj(graph_fn):
     # The 'prefilter' option removes all duplicate reads (already done by reago) and encodes them
     os.system("gt readjoiner prefilter -q -des -readset " + g.rj_dir + graph_fn + " -db " + g.rj_dir + graph_fn + ".fasta")
     # Determines all pairs suffix-prefix matches (SPMs) -l specifies an overlap of the reads and has a strong effect on the output
-    os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(g.MIN_OVERLAP)) + " -readset " + g.rj_dir + graph_fn + "> /dev/null 2>&1" )
+    os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + variables.rj_dir + graph_fn + "> /dev/null 2>&1" )
     # Converts the result into a txt file that's saved in the .edge.list output
-    os.system("gt readjoiner spmtest -readset " + g.rj_dir + graph_fn + ".0 -test showlist > " + g.rj_dir + graph_fn + ".edge.list")
+    os.system("gt readjoiner spmtest -readset " + variables.rj_dir + graph_fn + ".0 -test showlist > " + variables.rj_dir + graph_fn + ".edge.list")
 
     # Originals
     #os.system("gt readjoiner prefilter -q -des -readset " + rj_dir + graph_fn+ ".set -db " + rj_dir + graph_fn + ".fasta")
@@ -187,12 +206,12 @@ def create_graph_using_rj(graph_fn):
     read_map = {}
     # Count
     cnt = 0
-    with open(g.output_dir + "rj/" + graph_fn + ".des", encoding = "windows-1250") as fSetDes:
+    with open(variables.output_dir + "rj/" + graph_fn + ".des", encoding = "windows-1250") as fSetDes:
         for line in fSetDes:
             read_map[str(cnt)] = line[:-1]
             cnt += 1
 
-    with open(g.output_dir + "rj/" + graph_fn + ".edge.list",encoding = "windows-1250") as fEdgeList:
+    with open(variables.output_dir + "rj/" + graph_fn + ".edge.list",encoding = "windows-1250") as fEdgeList:
         for line in fEdgeList:
             # chr(45) is a dash ('-'). Specifying the ASCII code for compatibility sake
             if chr(45) in line:
@@ -261,7 +280,7 @@ def correct_sequencing_error(G, ratio):
         for successor in alignment_to_starting_node[starting_node]:
             # Reads are possitionned absolutely adding empty lines before them
             try:
-                msa.append([" " * alignment_to_starting_node[starting_node][successor] + g.read_db[successor], successor])
+                msa.append([" " * alignment_to_starting_node[starting_node][successor] + dat.read_db[successor], successor])
             except:
                 import pdb; pdb.set_trace()
             # MSA would be actually interesting to print out at some point
@@ -310,7 +329,7 @@ def correct_sequencing_error(G, ratio):
             # Looping over all ids in involved reads list (the one that was generated by splitting read ID of dereplicated reads)
             for read_id in involved_read:
                 # Retreating the sequence of the read by its ID
-                orig_seq = list(g.read_db[read_id])
+                orig_seq = list(dat.read_db[read_id])
                 # Retreaving the currently inspected base
                 cur_base = orig_seq[i - alignment_to_starting_node[starting_node][read_id]]
                 # Should the ratio of a current base be lower then the ERROR_CORRECTION_THRESHOLD (user input)
@@ -318,7 +337,7 @@ def correct_sequencing_error(G, ratio):
                     # The base is replaced by a dominant base
                     orig_seq[i - alignment_to_starting_node[starting_node][read_id]] = dominant
                     # Joining the read back together and returning it to the read_db
-                    g.read_db[read_id] = "".join(orig_seq)
+                    dat.read_db[read_id] = "".join(orig_seq)
 
 def correct_sequencing_error_reverse(G, ratio):
     # Saving a sub-dicionary with the key value of each starting node
@@ -378,7 +397,7 @@ def correct_sequencing_error_reverse(G, ratio):
 
         align_disp = []
         for ancestor in alignment_to_starting_node[starting_node]:
-            align_disp.append([" " * alignment_to_starting_node[starting_node][ancestor] + g.read_db[ancestor], ancestor])
+            align_disp.append([" " * alignment_to_starting_node[starting_node][ancestor] + dat.read_db[ancestor], ancestor])
 
         # correcting...
         # Iterating between maximum starting position to the end of the particular read
@@ -423,7 +442,7 @@ def correct_sequencing_error_reverse(G, ratio):
             # Looping over all ids in involved reads list (the one that was generated by splitting read ID of dereplicated reads)
             for read_id in involved_read:
                 # Retreating the sequence of the read by its ID
-                orig_seq = list(g.read_db[read_id])
+                orig_seq = list(dat.read_db[read_id])
                 # Retreaving the currently inspected base
                 cur_base = orig_seq[i - alignment_to_starting_node[starting_node][read_id]]
                 # Should the ratio of a current base be lower then the ERROR_CORRECTION_THRESHOLD (user input)
@@ -431,7 +450,7 @@ def correct_sequencing_error_reverse(G, ratio):
                     # The base is replaced by a dominant base
                     orig_seq[i - alignment_to_starting_node[starting_node][read_id]] = dominant
                     # Joining the read back together and returning it to the read_db
-                    g.read_db[read_id] = "".join(orig_seq)
+                    dat.read_db[read_id] = "".join(orig_seq)
 
 def collapse_graph(G, candidates):
     # Combining nodes in the networkx produced network
@@ -492,21 +511,21 @@ def collapse_graph(G, candidates):
 
             # update sequences
             # Retrieving the offset, counting from the overlap on
-            offset = len(g.read_db[predecessor]) - overlap_to_predecessor
+            offset = len(dat.read_db[predecessor]) - overlap_to_predecessor
             # Looping through the headers (codes) of of combined reads
             for read_id in node_to_combine.split('|'):
                 # Updating the read positions by the offset determined above
                 g.read_position_db[read_id] += offset
 
             # Retrieving the sequence of predecessor from the read_database (dictionary of all reads)
-            pred_seq = g.read_db[predecessor]
+            pred_seq = dat.read_db[predecessor]
             # Retrieving the sequence of node to combine from the read database (dictionary of all reads)
-            node_seq = g.read_db[node_to_combine]
+            node_seq = dat.read_db[node_to_combine]
             # Combining the two reads (predecessor + overhang of the sequence node)
             combined_seq = pred_seq + node_seq[overlap_to_predecessor:]
 
             # Adding the combined read to the dictionary of all reads
-            g.read_db[combined_node] = combined_seq
+            dat.read_db[combined_node] = combined_seq
 
             # clean up
             # Removing predecessor and node to commbine from the network
@@ -514,8 +533,8 @@ def collapse_graph(G, candidates):
             G.remove_node(predecessor)
 
             # Removing the just combined nodes (predecessor and node to combine) from the dictionary of all sequences
-            del g.read_db[node_to_combine]
-            del g.read_db[predecessor]
+            del dat.read_db[node_to_combine]
+            del dat.read_db[predecessor]
 
             # If node to combine still is in the list of nodes to combine, it's removed
             if node_to_combine in nodes_to_combine:
@@ -534,7 +553,7 @@ def merge_node(src_list, dst, shared, G, directionead_db):
 
     # dst is a header of merged sequences (e.g. '2579.2|2295.1|1042.1')
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
-    dst_seq  = g.read_db[dst]
+    dst_seq  = dat.read_db[dst]
     # retrieving overlap of the 'new' node with the node to merge with (shared)
     dst_overlap = G[shared][dst]['overlap']              if direction == 1 else G[dst][shared]["overlap"]
     # Sequence that's overhanging from the node to be merged with
@@ -546,7 +565,7 @@ def merge_node(src_list, dst, shared, G, directionead_db):
     to_merge  = []
     for src in src_list:
         # Retrieving sequences of each of the listed nodes
-        src_seq  = g.read_db[src]
+        src_seq  = dat.read_db[src]
         # Determining the overlap (integer) of the node with the node to be merged with
         src_overlap = G[shared][src]['overlap']          if direction == 1 else G[src][shared]["overlap"]
         # Sequence that's overhanging from the node to be merged with
@@ -601,7 +620,7 @@ def merge_node(src_list, dst, shared, G, directionead_db):
         G = nx.relabel_nodes(G, {dst: new_node}, copy = False)
 
         # Adding the new node in the final database
-        g.read_db[new_node] = read_db.pop(dst)
+        dat.read_db[new_node] = read_db.pop(dst)
 
         # Looping through the list of nodes to merge
         for n in to_merge:
@@ -713,7 +732,7 @@ def merge_bifurcation(G):
                 tip_candidates = tip_candidates.union(dst_candidates)
 
             # Merging the dst_nodes
-            merged_node = merge_node(tip_candidates, dst_node, node, G, -1,g.read_db,g.read_position_db,g.TIP_SIZE)
+            merged_node = merge_node(tip_candidates, dst_node, node, G, -1,dat.read_db,dat.read_position_db,variables.TIP_SIZE)
 
             # If the input isn't empty:
             if merged_node:
@@ -722,12 +741,12 @@ def merge_bifurcation(G):
                 collapse_candidate.add(node)
 
         # Calling a custom collapse function
-        G = collapse_graph(G, list(collapse_candidate),g.read_db, g.read_position_db)
+        G = collapse_graph(G, list(collapse_candidate),dat.read_db, g.read_position_db)
 
         if merged == False:
             break
 
-    G = collapse_graph(G, [],g.read_db,g.read_position_db)
+    G = collapse_graph(G, [],dat.read_db,g.read_position_db)
     return G
 
 def remove_bubble(G):
@@ -771,7 +790,7 @@ def remove_bubble(G):
                     # Adding new node to the collapse candidates list
                     collapse_candidate.add(new_node)
 
-        G = collapse_graph(G, list(collapse_candidate),g.read_db,g.read_position_db)
+        G = collapse_graph(G, list(collapse_candidate),dat.read_db,g.read_position_db)
         # If no bubbles were removed the loop is exited
         if not bubble_removed:
             break
@@ -784,7 +803,7 @@ def remove_isolated_node(G):
         # (e.g. there are 3 reads in '1107.2|1611.2|2403.1')
         # OR if the read length is shorter then 105% of the input read lenth (-l option)
         if  not G.in_degree(node) and not G.out_degree(node) and \
-            (n_read_in_node(node) < 5 or len(g.read_db[node]) < g.READ_LEN * 1.05):
+            (n_read_in_node(node) < 5 or len(dat.read_db[node]) < g.READ_LEN * 1.05):
             # Remove the node from the network
             G.remove_node(node)
 
@@ -864,10 +883,10 @@ def get_all_path(G, future_nodes, cur_path, paths):
 
 def get_contig(path, G):
     # Retrieve contig from the read database
-    contig = g.read_db[path[0]]
+    contig = dat.read_db[path[0]]
     for idx in range(1, len(path)):
         prev, cur = path[idx-1], path[idx]
-        seq = g.read_db[cur]
+        seq = dat.read_db[cur]
         overlap = G[prev][cur]["overlap"]
         contig += seq[overlap:]
     return contig
@@ -891,11 +910,11 @@ def get_assemblie(G):
     for node in starting_nodes:
         paths = get_all_path(G, future_nodes, [node], [])
         for path in paths:
-            contig = get_contig(path, G,g.read_db)
+            contig = get_contig(path, G,dat.read_db)
             if len(contig) >= g.FULL_LENGTH:
                 if g.NEED_DEFLANK:
                     st_pos = min([g.r_pos[r][0] - g.read_position_db[r] for r in path[0].split("|")])
-                    ed_pos = max([len(g.read_db_original[r]) - g.r_pos[r][1] for r in path[-1].split("|")])
+                    ed_pos = max([len(dat.read_db_original[r]) - g.r_pos[r][1] for r in path[-1].split("|")])
                     deflanked_contig = contig[st_pos : len(contig) - ed_pos]
                 else:
                     deflanked_contig = contig
@@ -1245,15 +1264,31 @@ def parseInput(args):
     variables.NEED_DEFLANK = False
 
     ##############################################################################################
+    # Starting the databases class
 
-    # Global dictionaries
-    variables.update({'read_db':{}})
-    variables.update({'r_pos':{}})
-    variables.update({'cm_pos':{}})
-    variables.update({'read_db_original':{}})
-    variables.update({'read_position_db':{}})
+    # Removing an old database file
+    if os.path.isfile('databases.hdf5') == True:
+        os.remove('databases.hdf5')
+
+    # Initialising a database file
+    dbFile = h5py.File('databases.hdf5', 'a')
+
+    dat = databases()
+    dat.newGroup('read_db', dbFile)
+    dat.newGroup('r_pos', dbFile)
+    dat.newGroup('read_db_original', dbFile)
+    dat.newGroup('read_position_db', dbFile)
+
+    #dat.update({'read_db':{}})
+
+    #variables.update({'r_pos':{}})
+    #variables.update({'cm_pos':{}})
+    #variables.update({'read_db_original':{}})
+    #variables.update({'read_position_db':{}})
 
     variables.write('settings.json')
+
+    #import pdb; pdb.set_trace()
 
     #TODO g.MIN_OVERLAP = args.READ_LENGTH*args.OVERLAP
     #TODO g.TIP_SIZE = args.TIP_SIZE
@@ -1270,7 +1305,7 @@ def parseInput(args):
     #TODO g.full_genes_path = g.output_dir + "full_genes.fasta"
     #TODO g.fragments_path = g.output_dir + "fragments.fasta"
 
-    return variables
+    return variables, dat
 
 # for testing purpose
 def draw_graph(graph, filename):

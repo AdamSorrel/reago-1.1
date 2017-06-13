@@ -71,7 +71,7 @@ args = parser.parse_args()
 g.init()
 
 # Function from reagoFunctions.py which assigns global variables based on user input
-variables = parseInput(args)
+variables, dat = parseInput(args)
 
 print('It took', time.time()-start, 'seconds to parse input.')
 
@@ -84,20 +84,15 @@ start = time.time()
 
 print (timestamp(), "REAGO (v1.10) started...")
 print ("Input file:", variables.filename)
-print ("Parameters:")
-for arg in vars(args).items():
-    print ("{0} : {1}".format(arg[0], arg[1]))
-
 
 print (timestamp(), "Reading input file...")
 # Retreaving sequence database (read_db), query position database (r_pos) and template position database (cm_pos)
 
-get_fa(variables)
-#import pdb; pdb.set_trace()
+get_fa(variables, dat)
 
 read_db_original = dict(variables.read_db)   # Saving database for future use in fun get_assemblie
-initialize_read_pos() # Sets read position database to 0. Saving database for future use in fun get_assemblie
-combine_duplicated_reads() # Dereplicating a database and saving the derep. headers separated by a '|' character.
+initialize_read_pos(variables, d) # Sets read position database to 0. Saving database for future use in fun get_assemblie
+combine_duplicated_reads(d) # Dereplicating a database and saving the derep. headers separated by a '|' character.
 #Saving database for future use in fun get_assemblie
 
 print('It took', time.time()-start, 'seconds to prepare databases.')
@@ -106,7 +101,7 @@ start = time.time()
 
 print (timestamp(), "Initializing overlap graph...")
 # Generating a DiGraph with a readjoiner using a file 'graph'.
-G = create_graph_using_rj("graph")
+G = create_graph_using_rj("graph", variables, dat)
 # Passing the DiGraph to to networkx
 # more info in https://networkx.github.io/documentation/development/reference/generated/networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs.html#networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs)
 subgraphs = nx.weakly_connected_component_subgraphs(G)
