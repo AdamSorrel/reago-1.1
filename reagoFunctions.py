@@ -34,52 +34,52 @@ class JSONObject:
     def write(self, output):
     # Writing a json file
         with open(output, 'w') as fj:
-            json.dump(self.__dict__, fj, ensure_ascii=False)
+            json.dump(self.__dict__, fj, ensure_ascii=False,separators=(',\n', ':'))
 
 ###############################################################################
 # Function definitions
 ###################################################################################
 
-def write_gene(data):
+def write_gene(data, variables):
     # Function writing an output full genes (genes that reached the max lengh defined by user)
     gene_cnt = 1
-    with open(g.full_genes_path, "w") as fOut:
+    with open(variables.full_genes_path, "w") as fOut:
         for path, gene in data:
             fOut.write(">gene_" + str(gene_cnt) + "_len=" + str(len(gene)) + "\n")
             fOut.write(gene + "\n")
             gene_cnt += 1
 
-def write_frag(data):
+def write_frag(data, variables):
     # Function writing scaffolds
     frag_cnt = 1
-    with open(g.fragments_path, "w") as fOut:
+    with open(variables.fragments_path, "w") as fOut:
         for path, gene in data:
             fOut.write(">fragment_" + str(frag_cnt) + "_len=" + str(len(gene)) + "\n")
             fOut.write(gene + "\n")
             frag_cnt += 1
 
 # Function receiving the input file handle
-def get_fa():
+def get_fa(variables):
     # Initializing dictionaries
     # r:id and read dictionary
     # cm_pos : id and template position dictionary
     # r_pos : id and position within the read
 
     # g.read_db, g.r_pos, g.cm_pos = {}, {}, {}
-    print(g.filename)
+    print(variables.filename)
 
-    with open(g.filename) as fIn:
+    with open(variables.filename) as fIn:
         for line in fIn:
             # For every header
             if line[0] == ">":
                 # read id, template start, template end, query start, query end
                 read_id, m_st, m_ed, s_st, s_ed = line[1:].split()
                 # sequence database value is saved empty for now
-                g.read_db[read_id] = ""
+                variables.read_db[read_id] = ""
                 # query database start and end
-                g.r_pos[read_id] = [int(s_st), int(s_ed)]
+                variables.r_pos[read_id] = [int(s_st), int(s_ed)]
                 # template database start and end
-                g.cm_pos[read_id] = [int(m_st), int(m_ed)]
+                variables.cm_pos[read_id] = [int(m_st), int(m_ed)]
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
                 g.read_db[read_id] += line[:-1]
@@ -199,7 +199,7 @@ def create_graph_using_rj(graph_fn):
                 continue
             read_1, read_2, overlap = line.split(" + ")
             read_id_1, read_id_2 = read_map[read_1], read_map[read_2]
-            G.add_edge(read_id_1, read_id_2, overlap = int(overlap))
+            G.add_edge(read_id_1, read_id_2, overlap=int(overlap))
 
     return G
 
@@ -470,23 +470,23 @@ def collapse_graph(G, candidates):
 
             # Header is updated using '|' separating nodes (e.g. 605.2|1822.2|979.2|637.1)
             # update graph
-            combined_node = predecessor  + "|" + node_to_combine
+            combined_node = predecessor + '|' + node_to_combine
             # Retrieving the value of an overlap (number)
-            overlap_to_predecessor = G[predecessor][node_to_combine]["overlap"]
+            overlap_to_predecessor = G[predecessor][node_to_combine]['overlap']
 
             # Adding a combined node to the networkx graph G
             G.add_node(combined_node)
             # Looping over 2.level predecessors
             for predecessors_predecessor in predecessors_predecessors:
                 # overlap between predecessors and 2. level predecessors
-                o = G[predecessors_predecessor][predecessor]["overlap"]
+                o = G[predecessors_predecessor][predecessor]['overlap']
                 # Adding an edge to the network G using combined nodes and overlap value
                 G.add_edge(predecessors_predecessor, combined_node, overlap = o)
 
             # Looping over the successors
             for successor in successors:
                 # Retrieving the overlap value betwenn sucessor and the node to combine
-                o = G[node_to_combine][successor]["overlap"]
+                o = G[node_to_combine][successor]['overlap']
                 # Adding an edge to the network G using combined nodes and the overlap value
                 G.add_edge(combined_node, successor, overlap = o)
 
@@ -494,7 +494,7 @@ def collapse_graph(G, candidates):
             # Retrieving the offset, counting from the overlap on
             offset = len(g.read_db[predecessor]) - overlap_to_predecessor
             # Looping through the headers (codes) of of combined reads
-            for read_id in node_to_combine.split("|"):
+            for read_id in node_to_combine.split('|'):
                 # Updating the read positions by the offset determined above
                 g.read_position_db[read_id] += offset
 
@@ -536,7 +536,7 @@ def merge_node(src_list, dst, shared, G, directionead_db):
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
     dst_seq  = g.read_db[dst]
     # retrieving overlap of the 'new' node with the node to merge with (shared)
-    dst_overlap = G[shared][dst]["overlap"]              if direction == 1 else G[dst][shared]["overlap"]
+    dst_overlap = G[shared][dst]['overlap']              if direction == 1 else G[dst][shared]["overlap"]
     # Sequence that's overhanging from the node to be merged with
     dst_remaining  = dst_seq[dst_overlap: ]              if direction == 1 else dst_seq[ :-dst_overlap][::-1]
 
@@ -548,7 +548,7 @@ def merge_node(src_list, dst, shared, G, directionead_db):
         # Retrieving sequences of each of the listed nodes
         src_seq  = g.read_db[src]
         # Determining the overlap (integer) of the node with the node to be merged with
-        src_overlap = G[shared][src]["overlap"]          if direction == 1 else G[src][shared]["overlap"]
+        src_overlap = G[shared][src]['overlap']          if direction == 1 else G[src][shared]["overlap"]
         # Sequence that's overhanging from the node to be merged with
         src_remaining  = src_seq[src_overlap: ]          if direction == 1 else src_seq[ :-src_overlap][::-1]
 
@@ -1096,6 +1096,7 @@ def parseInput(args):
 
     try:
         variables.read('settings.json')
+
     except:
         print("No settings file was found.")
 
@@ -1107,7 +1108,7 @@ def parseInput(args):
             # If settings file contains input file, we're good to go.
             variables.filename
         except:
-                print('ERROR: Please specify an input file path using token -i/--input.')
+                print('ERROR: Please specify an "input file" path using token -i/--input.')
                 quit()
     # User have specified input file.
     else:
@@ -1129,7 +1130,7 @@ def parseInput(args):
             if variables.output_dir[-1] != "/":
                 variables.output_dir += "/"
         except:
-                print('ERROR: Please specify an output directory path using token -i/--input.')
+                print('ERROR: Please specify an "output directory" path using token -i/--input.')
                 quit()
     # User have specified output file.
     else:
@@ -1142,42 +1143,134 @@ def parseInput(args):
     if os.path.isdir(variables.output_dir) == False:
         os.mkdir(variables.output_dir)
 
-    variables.write('settings.json')
-    quit()
-
-
-
+    # Formating the output
+    variables.update({'graph_path':variables.output_dir + 'graph.data'})
+    variables.update({'plot_dir':variables.output_dir + 'plot/'})
+    variables.update({'rj_dir':variables.output_dir + 'rj/'})
+    variables.update({'full_genes_path':variables.output_dir + 'full_genes.fasta'})
+    variables.update({'fragments_path':variables.output_dir + 'fragments.fasta'})
 
     # If readjoiner (rj) directory doesn't exist yet, it will be generated.
-    if os.path.exists(g.rj_dir) == False:
-        os.mkdir(g.rj_dir)
+    if os.path.exists(variables.rj_dir) == False:
+        os.mkdir(variables.rj_dir)
 
-    #import pdb; pdb.set_trace()
-    # Retrieving an output folder
-    g.output_dir = args.OUT
-
-    # Error: Input file doesn't exist.
-    if os.path.exists(g.filename) == False:
-        print ("Error: File", "\'" + g.filename + "\'", "doesn't exist.")
-        sys.exit(1)
-
+    ##############################################################################################
     # Retrieving user input values and renaming them.
-    g.MIN_OVERLAP = args.READ_LENGTH*args.OVERLAP
-    g.TIP_SIZE = args.TIP_SIZE
-    g.CONFIDENCE_BASE = args.CONFIDENCE_BASE
-    g.ERROR_CORRECTION_THRESHOLD = args.ERROR_CORRECTION_THRESHOLD
-    g.READ_LEN = args.READ_LENGTH
-    g.FULL_LENGTH = args.FULL_LENGTH
-    g.PATH_FINDING_PARAMETER = args.PATH_FINDING_PARAMETER # Not sure whether this is actually used anywhere.
-    g.NEED_DEFLANK = False
+    if args.READ_LENGTH == None:
+        try:
+            # If settings file contains read length, we're good to go.
+            variables.READ_LEN
+        except:
+                print('ERROR: Please specify a "read length" using token -l/--read_length')
+                quit()
+    else:
+        variables.update({'READ_LEN':int(args.READ_LENGTH)})
 
-    # Formating the output
-    g.graph_path = g.output_dir + "graph.data"
-    g.plot_dir = g.output_dir + "plot/"
-    g.rj_dir = g.output_dir + "rj/"
-    g.full_genes_path = g.output_dir + "full_genes.fasta"
-    g.fragments_path = g.output_dir + "fragments.fasta"
+    ##############################################################################################
 
+    if args.OVERLAP == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.MIN_OVERLAP
+        except:
+                print('ERROR: Please specify an "overlap" using token -ol/--overlap')
+                quit()
+    else:
+        variables.update({'MIN_OVERLAP':variables.READ_LEN * args.OVERLAP})
+
+    ##############################################################################################
+
+    if args.TIP_SIZE == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.TIP_SIZE
+        except:
+            print('ERROR: Please specify a "tip size" using token -t/--tip_size')
+            quit()
+    else:
+        variables.update({'TIP_SIZE': int(args.TIP_SIZE)})
+
+    ##############################################################################################
+
+    if args.CONFIDENCE_BASE == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.CONFIDENCE_BASE
+        except:
+            print('ERROR: Please specify a "confidence base" using token -c/--confidence_base')
+            quit()
+    else:
+        variables.update({'CONFIDENCE_BASE': int(args.CONFIDENCE_BASE)})
+
+    ##############################################################################################
+
+    if args.ERROR_CORRECTION_THRESHOLD == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.ERROR_CORRECTION_THRESHOLD
+        except:
+            print('ERROR: Please specify an "error correction threshold" using token -e/--error')
+            quit()
+    else:
+        variables.update({'ERROR_CORRECTION_THRESHOLD': int(args.ERROR_CORRECTION_THRESHOLD)})
+
+    ##############################################################################################
+
+    if args.FULL_LENGTH == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.FULL_LENGTH
+        except:
+            print('ERROR: Please specify an expected "full length" using token -f/--full_length')
+            quit()
+    else:
+        variables.update({'FULL_LENGTH': int(args.FULL_LENGTH)})
+
+    ##############################################################################################
+    # todo : Figure out whether this parameter is actually used anywhere.
+
+    if args.PATH_FINDING_PARAMETER == None:
+        try:
+            # If settings file contains minimum overlap, we're good to go.
+            variables.PATH_FINDING_PARAMETER
+        except:
+            print('ERROR: Please specify a "path finding parameter" using token -p/--path_finding')
+            quit()
+    else:
+        variables.update({'PATH_FINDING_PARAMETER': int(args.PATH_FINDING_PARAMETER)})
+
+    ##############################################################################################
+
+    # todo : Figure out what that is
+    variables.NEED_DEFLANK = False
+
+    ##############################################################################################
+
+    # Global dictionaries
+    variables.update({'read_db':{}})
+    variables.update({'r_pos':{}})
+    variables.update({'cm_pos':{}})
+    variables.update({'read_db_original':{}})
+    variables.update({'read_position_db':{}})
+
+    variables.write('settings.json')
+
+    #TODO g.MIN_OVERLAP = args.READ_LENGTH*args.OVERLAP
+    #TODO g.TIP_SIZE = args.TIP_SIZE
+    #TODO g.CONFIDENCE_BASE = args.CONFIDENCE_BASE
+    #TODO g.ERROR_CORRECTION_THRESHOLD = args.ERROR_CORRECTION_THRESHOLD
+    #TODO g.READ_LEN = args.READ_LENGTH
+    #TODO g.FULL_LENGTH = args.FULL_LENGTH
+    #TODO g.PATH_FINDING_PARAMETER = args.PATH_FINDING_PARAMETER
+    #TODO g.NEED_DEFLANK = False
+
+    #TODO g.graph_path = g.output_dir + "graph.data"
+    #TODO g.plot_dir = g.output_dir + "plot/"
+    #TODO g.rj_dir = g.output_dir + "rj/"
+    #TODO g.full_genes_path = g.output_dir + "full_genes.fasta"
+    #TODO g.fragments_path = g.output_dir + "fragments.fasta"
+
+    return variables
 
 # for testing purpose
 def draw_graph(graph, filename):

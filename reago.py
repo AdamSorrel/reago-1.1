@@ -47,12 +47,12 @@ Dependencies: \n \
 formatter_class=RawTextHelpFormatter)
 
 # Optional arguments
-parser.add_argument('-ol', '--overlap', dest='OVERLAP', type = float,  default=0.7, help='Read overlap. [Default: 0.7]', choices=[fRange(0.5, 1)])
-parser.add_argument('-e', '--error', dest='ERROR_CORRECTION_THRESHOLD',  type = float, default=0.05, help='Error correction threshold. [Default: 0.05]', choices=[fRange(1, float("inf"))])
-parser.add_argument('-t', '--tip_size', dest='TIP_SIZE',  type = int, default=30, help='Tip size. [Default: 30]', choices=[fRange(1, float("inf"))])
-parser.add_argument('-b', '--path_finding', dest='PATH_FINDING_PARAMETER',  type = int, default=10, help='Path finding parameter. [Default: 10]', choices=[fRange(2, 11)])
-parser.add_argument('-f', '--full_length', dest='FULL_LENGTH',  type = int, default=1350, help='Full length of the gene. [Default: 1350]', choices=[fRange(1, float("inf"))])
-parser.add_argument('-c', '--confidence_base', dest='CONFIDENCE_BASE',  type = int, default=10, help='confidence_base. [Default: 10]', choices=[fRange(2, 11)])
+parser.add_argument('-ol', '--overlap', dest='OVERLAP', type = float,  default=None, help='Read overlap. [Default: 0.7]', choices=[fRange(0.5, 1)])
+parser.add_argument('-e', '--error', dest='ERROR_CORRECTION_THRESHOLD', type = float, default=None, help='Error correction threshold. [Default: 0.05]', choices=[fRange(0, float(1))])
+parser.add_argument('-t', '--tip_size', dest='TIP_SIZE',  type = int, default=None, help='Tip size. [Default: 30]', choices=[fRange(1, float("inf"))])
+parser.add_argument('-p', '--path_finding', dest='PATH_FINDING_PARAMETER',  type = int, default=None, help='Path finding parameter. [Default: 10]', choices=[fRange(2, 11)])
+parser.add_argument('-f', '--full_length', dest='FULL_LENGTH',  type = int, default=None, help='Full length of the gene. [Default: 1350]', choices=[fRange(1, float("inf"))])
+parser.add_argument('-c', '--confidence_base', dest='CONFIDENCE_BASE',  type = int, default=None, help='confidence_base. [Default: 10]', choices=[fRange(2, 11)])
 
 
 # Required arguments
@@ -71,7 +71,7 @@ args = parser.parse_args()
 g.init()
 
 # Function from reagoFunctions.py which assigns global variables based on user input
-parseInput(args)
+variables = parseInput(args)
 
 print('It took', time.time()-start, 'seconds to parse input.')
 
@@ -83,7 +83,7 @@ start = time.time()
 
 
 print (timestamp(), "REAGO (v1.10) started...")
-print ("Input file:", g.filename)
+print ("Input file:", variables.filename)
 print ("Parameters:")
 for arg in vars(args).items():
     print ("{0} : {1}".format(arg[0], arg[1]))
@@ -92,10 +92,10 @@ for arg in vars(args).items():
 print (timestamp(), "Reading input file...")
 # Retreaving sequence database (read_db), query position database (r_pos) and template position database (cm_pos)
 
-get_fa()
+get_fa(variables)
 #import pdb; pdb.set_trace()
 
-read_db_original = dict(g.read_db)   # Saving database for future use in fun get_assemblie
+read_db_original = dict(variables.read_db)   # Saving database for future use in fun get_assemblie
 initialize_read_pos() # Sets read position database to 0. Saving database for future use in fun get_assemblie
 combine_duplicated_reads() # Dereplicating a database and saving the derep. headers separated by a '|' character.
 #Saving database for future use in fun get_assemblie
@@ -120,7 +120,7 @@ scaffold_candidates = []
 print('It took', time.time()-start, 'second to prepare main graph.')
 start = time.time()
 
-import pdb; pdb.set_trace()
+quit()
 
 #num = 0
 # Looping through the output of networkx
