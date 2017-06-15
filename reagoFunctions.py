@@ -1,58 +1,15 @@
-import h5py
 import os
 import os.path
-import sys
 import time
 import networkx as nx
 #import pygraphviz as pgv
 import operator
-import json
+import redis
+
+import time
 
 # Imports global variables
 import globalVariables as g
-
-###############################################################################
-# Classes definition
-###################################################################################
-
-class JSONObject:
-    # Initialising empty dictionary
-    def __init__(self):
-        self.__dict__ = {}
-    def update(self, d):
-    # If it exist, and old key is removed and replaced by the new one
-        for key in d:
-            if key in self.__dict__:
-                del self.__dict__[key]
-        d.update(self.__dict__)
-        self.__dict__ = d
-    def read(self, input):
-    # Reading a json file.
-        with open(input, 'r') as fj:
-            d = json.load(fj)
-            d.update(self.__dict__)
-            self.__dict__ = d
-    def write(self, output):
-    # Writing a json file
-        with open(output, 'w') as fj:
-            json.dump(self.__dict__, fj, ensure_ascii=False,separators=(',\n', ':'))
-
-class databases:
-    def __init__(self):
-    # Initialising a list of database names
-        self.__dict__ = {}
-    #def dt(self):
-        # Setting up a special dtype
-        #self.dt = h5py.special_dtype(vlen=bytes)
-    def newGroup(self, name, db):
-        # If it exist, and old key is removed and replaced by the new one
-        if name in self.__dict__:
-                del self.__dict__[name]
-    def add(self, name, seq):
-        length = len(seq)
-        d = {name : db.create_dataset(name, shape=(100,), dtype=h5py.special_dtype(vlen=bytes))}
-        d.update(self.__dict__)
-        self.__dict__ = d
 
 ###############################################################################
 # Function definitions
@@ -77,33 +34,42 @@ def write_frag(data, variables):
             frag_cnt += 1
 
 # Function receiving the input file handle
-def get_fa(variables, dat):
-    # Initializing dictionaries
-    # r:id and read dictionary
-    # cm_pos : id and template position dictionary
-    # r_pos : id and position within the read
+def get_fa(variables, rserv):
+    # Initializing redis database
 
-    # g.read_db, g.r_pos, g.cm_pos = {}, {}, {}
-    print(variables.filename)
+    start_time = time.time()
+
+    pipe = rserv.pipeline()
 
     with open(variables.filename) as fIn:
         for line in fIn:
             # For every header
             if line[0] == ">":
                 # read id, template start, template end, query start, query end
-                read_id, m_st, m_ed, s_st, s_ed = line[1:].split()
-                # sequence database value is saved empty for now
-                dat.read_db[read_id] = ""
+                read_id, template_position_start, template_position_end, sequence_start, sequence_end = line[1:].split()
                 # query database start and end
-                variables.r_pos[read_id] = [int(s_st), int(s_ed)]
-                # template database start and end
-                variables.cm_pos[read_id] = [int(m_st), int(m_ed)]
+                read_position = [int(sequence_start), int(sequence_end)]
+                # Beginning and end position within the template
+                template_position = [int(template_position_start), int(template_position_end)]
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
-                import pdb; pdb.set_trace()
-                dat.read_db[read_id] = line[:-1]
+                read_sequence = line[:-1]
+                database_value = {'read_sequence' : read_sequence, 'read_position' : read_position, 'template_position' : template_position}
+                database_key = read_id
 
-    #return g.read_db, g.r_pos, g.cm_pos
+                pipe.hmset(database_key, database_value)
+
+                # Values are set as a dictionary object and need to be retrieved using the following command:
+                # rserv.hget(read_id (e.g. '1100.1'), type_of_entry (e.g. 'read_position))
+
+    pipe.execute()
+
+    elapsed_time = time.time() - start_time
+
+    print('Time it took to create a Redis database with a pipe:', elapsed_time)
+    quit()
+
+    return
 
 def write_fa(sequence_container,filename, width):
     # This function saves a dictionary of sequences into a file
@@ -1106,206 +1072,6 @@ def scaffold(scaffold_candidates):
 
     return full_gene, [[path, contig] for path, du, du, contig in scaffold_candidates]
 
-
-def parseInput(args):
-    # Retrieving an input file
-
-    # Creating a json object containing user settings
-    variables = JSONObject()
-
-    try:
-        variables.read('settings.json')
-
-    except:
-        print("No settings file was found.")
-
-    ##############################################################################################
-    # Input file
-    # Default value of the 'input' argument is 'None', given that user didnot specify input, let's check settings file.
-    if args.IN == None:
-        try:
-            # If settings file contains input file, we're good to go.
-            variables.filename
-        except:
-                print('ERROR: Please specify an "input file" path using token -i/--input.')
-                quit()
-    # User have specified input file.
-    else:
-        variables.update({'filename':args.IN})
-
-    # Checking whether input file exists
-    if os.path.isfile(variables.filename) == False:
-        print('ERROR: Input file', '\"' + variables.filename + '\"','does not exist. Please double check the path and filename in the -i/--input token or the \"settings.json\" file.')
-        quit()
-
-    ##############################################################################################
-    # Output folder
-    # Default value of the 'output' argument is 'None', given that user didnot specify input, let's check settings file.
-    if args.OUT == None:
-        try:
-            # If settings file contains output file, we're good to go.
-            variables.output_dir
-            # Adding a slash behind the output folder should it not already contain one
-            if variables.output_dir[-1] != "/":
-                variables.output_dir += "/"
-        except:
-                print('ERROR: Please specify an "output directory" path using token -i/--input.')
-                quit()
-    # User have specified output file.
-    else:
-        variables.update({'output_dir':args.OUT})
-        # Check if output contains slash and if not add it
-        if variables.output_dir[-1] != "/":
-            variables.output_dir += "/"
-
-    # Checking whether input file exists and if not, creating it.
-    if os.path.isdir(variables.output_dir) == False:
-        os.mkdir(variables.output_dir)
-
-    # Formating the output
-    variables.update({'graph_path':variables.output_dir + 'graph.data'})
-    variables.update({'plot_dir':variables.output_dir + 'plot/'})
-    variables.update({'rj_dir':variables.output_dir + 'rj/'})
-    variables.update({'full_genes_path':variables.output_dir + 'full_genes.fasta'})
-    variables.update({'fragments_path':variables.output_dir + 'fragments.fasta'})
-
-    # If readjoiner (rj) directory doesn't exist yet, it will be generated.
-    if os.path.exists(variables.rj_dir) == False:
-        os.mkdir(variables.rj_dir)
-
-    ##############################################################################################
-    # Retrieving user input values and renaming them.
-    if args.READ_LENGTH == None:
-        try:
-            # If settings file contains read length, we're good to go.
-            variables.READ_LEN
-        except:
-                print('ERROR: Please specify a "read length" using token -l/--read_length')
-                quit()
-    else:
-        variables.update({'READ_LEN':int(args.READ_LENGTH)})
-
-    ##############################################################################################
-
-    if args.OVERLAP == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.MIN_OVERLAP
-        except:
-                print('ERROR: Please specify an "overlap" using token -ol/--overlap')
-                quit()
-    else:
-        variables.update({'MIN_OVERLAP':variables.READ_LEN * args.OVERLAP})
-
-    ##############################################################################################
-
-    if args.TIP_SIZE == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.TIP_SIZE
-        except:
-            print('ERROR: Please specify a "tip size" using token -t/--tip_size')
-            quit()
-    else:
-        variables.update({'TIP_SIZE': int(args.TIP_SIZE)})
-
-    ##############################################################################################
-
-    if args.CONFIDENCE_BASE == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.CONFIDENCE_BASE
-        except:
-            print('ERROR: Please specify a "confidence base" using token -c/--confidence_base')
-            quit()
-    else:
-        variables.update({'CONFIDENCE_BASE': int(args.CONFIDENCE_BASE)})
-
-    ##############################################################################################
-
-    if args.ERROR_CORRECTION_THRESHOLD == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.ERROR_CORRECTION_THRESHOLD
-        except:
-            print('ERROR: Please specify an "error correction threshold" using token -e/--error')
-            quit()
-    else:
-        variables.update({'ERROR_CORRECTION_THRESHOLD': int(args.ERROR_CORRECTION_THRESHOLD)})
-
-    ##############################################################################################
-
-    if args.FULL_LENGTH == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.FULL_LENGTH
-        except:
-            print('ERROR: Please specify an expected "full length" using token -f/--full_length')
-            quit()
-    else:
-        variables.update({'FULL_LENGTH': int(args.FULL_LENGTH)})
-
-    ##############################################################################################
-    # todo : Figure out whether this parameter is actually used anywhere.
-
-    if args.PATH_FINDING_PARAMETER == None:
-        try:
-            # If settings file contains minimum overlap, we're good to go.
-            variables.PATH_FINDING_PARAMETER
-        except:
-            print('ERROR: Please specify a "path finding parameter" using token -p/--path_finding')
-            quit()
-    else:
-        variables.update({'PATH_FINDING_PARAMETER': int(args.PATH_FINDING_PARAMETER)})
-
-    ##############################################################################################
-
-    # todo : Figure out what that is
-    variables.NEED_DEFLANK = False
-
-    ##############################################################################################
-    # Starting the databases class
-
-    # Removing an old database file
-    if os.path.isfile('databases.hdf5') == True:
-        os.remove('databases.hdf5')
-
-    # Initialising a database file
-    dbFile = h5py.File('databases.hdf5', 'a')
-
-    dat = databases()
-    dat.newGroup('read_db', dbFile)
-    dat.newGroup('r_pos', dbFile)
-    dat.newGroup('read_db_original', dbFile)
-    dat.newGroup('read_position_db', dbFile)
-
-    #dat.update({'read_db':{}})
-
-    #variables.update({'r_pos':{}})
-    #variables.update({'cm_pos':{}})
-    #variables.update({'read_db_original':{}})
-    #variables.update({'read_position_db':{}})
-
-    variables.write('settings.json')
-
-    #import pdb; pdb.set_trace()
-
-    #TODO g.MIN_OVERLAP = args.READ_LENGTH*args.OVERLAP
-    #TODO g.TIP_SIZE = args.TIP_SIZE
-    #TODO g.CONFIDENCE_BASE = args.CONFIDENCE_BASE
-    #TODO g.ERROR_CORRECTION_THRESHOLD = args.ERROR_CORRECTION_THRESHOLD
-    #TODO g.READ_LEN = args.READ_LENGTH
-    #TODO g.FULL_LENGTH = args.FULL_LENGTH
-    #TODO g.PATH_FINDING_PARAMETER = args.PATH_FINDING_PARAMETER
-    #TODO g.NEED_DEFLANK = False
-
-    #TODO g.graph_path = g.output_dir + "graph.data"
-    #TODO g.plot_dir = g.output_dir + "plot/"
-    #TODO g.rj_dir = g.output_dir + "rj/"
-    #TODO g.full_genes_path = g.output_dir + "full_genes.fasta"
-    #TODO g.fragments_path = g.output_dir + "fragments.fasta"
-
-    return variables, dat
 
 # for testing purpose
 def draw_graph(graph, filename):

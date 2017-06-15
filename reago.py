@@ -3,8 +3,11 @@ import networkx as nx
 #import pygraphviz as pgv
 import argparse
 from argparse import RawTextHelpFormatter
-from reagoFunctions import *
 
+from reagoFunctions import *
+from parseInput import parseInput
+
+# TODO : phase out global variables
 # Imports global settins file (defining global variables)
 import globalVariables as g
 
@@ -68,12 +71,13 @@ args = parser.parse_args()
 #==============================================================================
 
 # Defining global variables
+# TODO : phase global variables out and replace by JSON settings object
 g.init()
 
 # Function from reagoFunctions.py which assigns global variables based on user input
-variables, dat = parseInput(args)
+variables = parseInput(args)
 
-print('It took', time.time()-start, 'seconds to parse input.')
+print('It took', time.time()-start, 'seconds to parse the input.')
 
 #==============================================================================
 # # Main procedure starts here
@@ -88,7 +92,11 @@ print ("Input file:", variables.filename)
 print (timestamp(), "Reading input file...")
 # Retreaving sequence database (read_db), query position database (r_pos) and template position database (cm_pos)
 
-get_fa(variables, dat)
+# Creating a redis database object
+
+rserv = redis.Redis('localhost')
+
+get_fa(variables, rserv)
 
 read_db_original = dict(variables.read_db)   # Saving database for future use in fun get_assemblie
 initialize_read_pos(variables, d) # Sets read position database to 0. Saving database for future use in fun get_assemblie
