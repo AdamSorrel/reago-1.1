@@ -71,8 +71,6 @@ args = parser.parse_args()
 #==============================================================================
 
 # Defining global variables
-# TODO : phase global variables out and replace by JSON settings object
-g.init()
 
 # Function from reagoFunctions.py which assigns global variables based on user input
 variables = parseInput(args)
@@ -94,12 +92,19 @@ print (timestamp(), "Reading input file...")
 
 # Creating a redis database object
 
-rserv = redis.Redis('localhost')
+# redis-server --port 6379
+read_db = redis.StrictRedis('localhost', port = 6379)
+# redis-server --port 6380
+read_db_original = redis.StrictRedis('localhost', port=6380)
 
-get_fa(variables, rserv)
+read_db_original.slaveof('localhost', port=6379)
+# Enslaving read_db_original to read_db for the time being.
 
-read_db_original = dict(variables.read_db)   # Saving database for future use in fun get_assemblie
-initialize_read_pos(variables, d) # Sets read position database to 0. Saving database for future use in fun get_assemblie
+# Initialising databases
+
+database_init(variables, read_db, read_db_original)
+
+#initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
 combine_duplicated_reads(d) # Dereplicating a database and saving the derep. headers separated by a '|' character.
 #Saving database for future use in fun get_assemblie
 
