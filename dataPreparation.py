@@ -3,12 +3,12 @@ import shutil
 import os
 
 # Function receiving the input file handle; originally called 'get_fa'
-def database_init(variables, read_db):
+def database_init(variables, db):
     # Initializing redis database
 
     start_time = time.time()
 
-    pipe = read_db.pipeline()
+    pipe = db.pipeline()
 
     with open(variables.filename) as fIn:
 
@@ -27,10 +27,12 @@ def database_init(variables, read_db):
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
                 read_sequence = line[:-1]
-                database_value = {'read_sequence' : read_sequence, 'read_position' : 0, 'template_position' : template_position}
-                database_key = read_id
 
-                pipe.hmset(database_key, database_value)
+                pipe.hset('read_sequence', read_id, read_sequence)
+                pipe.hset('read_position', read_id, 0)
+                pipe.hset('template_position', read_id, template_position)
+
+                #pipe.hmset(database_key, database_value)
 
                 # Values are set as a dictionary object and need to be retrieved using the following command:
                 # rserv.hget(read_id (e.g. '1100.1'), type_of_entry (e.g. 'read_position))
@@ -42,7 +44,7 @@ def database_init(variables, read_db):
                 pipe.execute()
 
                 # Start a new pipeline
-                pipe = read_db.pipeline()
+                pipe = db.pipeline()
 
                 counter = 0
 
@@ -52,7 +54,7 @@ def database_init(variables, read_db):
     # Dumping the read database to the disk
     print('Saving original database.')
 
-    read_db.save()
+    db.save()
     # Checking if a directory 'original database' exists and if not creating it
     if not os.path.exists('original_database'):
         os.mkdir('original_database')
