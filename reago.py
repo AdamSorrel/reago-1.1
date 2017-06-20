@@ -95,12 +95,12 @@ print (timestamp(), "Reading input file...")
 # Creating a redis database object
 
 # redis-server --port 6379
-read_db = redis.StrictRedis('localhost', port = 6379)
+db = redis.StrictRedis('localhost', port = 6379)
 
 # Initialising databases
-dataPreparation.database_init(variables, read_db)
+dataPreparation.database_init(variables, db)
 
-print('Read database contains {} keys.'.format(read_db.dbsize()))
+print('Read database contains {} keys.'.format(db.dbsize()))
 
 #initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
 
@@ -114,7 +114,7 @@ start = time.time()
 
 print (timestamp(), "Initializing overlap graph...")
 # Generating a DiGraph with a readjoiner using a file 'graph'.
-G = create_graph_using_rj("graph", variables, read_db)
+G = create_graph_using_rj("graph", variables, db)
 # Passing the DiGraph to to networkx
 # more info in https://networkx.github.io/documentation/development/reference/generated/networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs.html#networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs)
 
