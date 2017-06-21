@@ -6,6 +6,8 @@ from argparse import RawTextHelpFormatter
 
 from reagoFunctions import *
 from parseInput import parseInput
+import dataPreparation
+import redis
 
 # TODO : phase out global variables
 # Imports global settins file (defining global variables)
@@ -94,29 +96,29 @@ print (timestamp(), "Reading input file...")
 
 # redis-server --port 6379
 read_db = redis.StrictRedis('localhost', port = 6379)
-# redis-server --port 6380
-read_db_original = redis.StrictRedis('localhost', port=6380)
-
-read_db_original.slaveof('localhost', port=6379)
-# Enslaving read_db_original to read_db for the time being.
 
 # Initialising databases
+dataPreparation.database_init(variables, read_db)
 
-database_init(variables, read_db, read_db_original)
+print('Read database contains {} keys.'.format(read_db.dbsize()))
 
 #initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
-combine_duplicated_reads(d) # Dereplicating a database and saving the derep. headers separated by a '|' character.
+
+
+#combine_duplicated_reads(d) # Dereplicating a database and saving the derep. headers separated by a '|' character.
+
 #Saving database for future use in fun get_assemblie
 
 print('It took', time.time()-start, 'seconds to prepare databases.')
 start = time.time()
 
-
 print (timestamp(), "Initializing overlap graph...")
 # Generating a DiGraph with a readjoiner using a file 'graph'.
-G = create_graph_using_rj("graph", variables, dat)
+G = create_graph_using_rj("graph", variables, read_db)
 # Passing the DiGraph to to networkx
 # more info in https://networkx.github.io/documentation/development/reference/generated/networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs.html#networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs)
+
+quit()
 subgraphs = nx.weakly_connected_component_subgraphs(G)
 
 # Retrieving scaffold candidates and full genes from the subgraphs
