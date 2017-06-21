@@ -1,7 +1,9 @@
 import time
+import shutil
+import os
 
 # Function receiving the input file handle; originally called 'get_fa'
-def database_init(variables, read_db, read_db_original):
+def database_init(variables, read_db):
     # Initializing redis database
 
     start_time = time.time()
@@ -25,7 +27,7 @@ def database_init(variables, read_db, read_db_original):
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
                 read_sequence = line[:-1]
-                database_value = {'read_sequence' : read_sequence, 'read_position' : read_position, 'template_position' : template_position}
+                database_value = {'read_sequence' : read_sequence, 'read_position' : 0, 'template_position' : template_position}
                 database_key = read_id
 
                 pipe.hmset(database_key, database_value)
@@ -48,20 +50,20 @@ def database_init(variables, read_db, read_db_original):
     pipe.execute()
 
     # Dumping the read database to the disk
-    read_db.bgsave()
+    print('Saving original database.')
+
+    read_db.save()
+    # Checking if a directory 'original database' exists and if not creating it
+    if not os.path.exists('original_database'):
+        os.mkdir('original_database')
+
+    # Copying backup database in the original directory file
+    shutil.copy('dump.rdb', 'original_database/dump.rdb')
+
 
     elapsed_time = time.time() - start_time
 
     print('Time it took {} to create a Redis database:'.format(elapsed_time))
-
-
-    print('Read database contains {} keys.'.format(read_db.dbsize()))
-
-    print('Read database original contains {} keys.'.format(read_db_original.dbsize()))
-
-    # We are leaving the read_db_original instance as a slave to read_db instance to make sure the transfer of data has
-    # time to finish.
-    # Since the transfer is happening on the background, we can keep on doing other stuff.
 
     return
 
