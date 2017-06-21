@@ -4,7 +4,7 @@ import time
 import networkx as nx
 #import pygraphviz as pgv
 import operator
-import redis
+import shutil
 
 # Imports global variables
 #import globalVariables as g
@@ -70,7 +70,7 @@ def n_read_in_node(node):
 
 
 
-def create_graph_using_rj(graph_fn, variables, dat):
+def create_graph_using_rj(graph_fn, variables, read_db):
     # Wrapper function for the readjoiner
     # Accepts the dereplicated read database + graph_fn ("graph")
 
@@ -79,17 +79,27 @@ def create_graph_using_rj(graph_fn, variables, dat):
     # A DiGraph stores nodes and edges with optional data, or attributes.
     G = nx.DiGraph()
 
-    # Generated output file directory
-    non_dup_fn = g.rj_dir + graph_fn + ".fasta"
+    # Generated output file directory for dereplicated sequences
+    read_db.save()
+    # Checking if a directory 'original database' exists and if not creating it
+    if not os.path.exists(variables.rj_dir + 'dereplicated_database'):
+        os.mkdir(variables.rj_dir + 'dereplicated_database')
+
+    # Copying backup database in the original directory file
+    shutil.copy('dump.rdb', variables.rj_dir + 'dereplicated_database')
+
+    #non_dup_fn = g.rj_dir + graph_fn + ".fasta"
+
+    ### Not saving any sequences now. Old database is
     # Saving sequence database in a file using width 0, which means saving the whole sequence.
-    write_fa(dat.read_db,non_dup_fn, 0)
+    #write_fa(dat.read_db,non_dup_fn, 0)
 
     # This following functions generates files 'graph.fasta', 'graph.set.des', 'graph.set.esq', 'graph.set.rit' and 'graph.set.sds'
     # 'graph.fasta' is dereplicated file
     # 'graph.set.des' are headers of dereplicated files (most likely)
 
     # The 'prefilter' option removes all duplicate reads (already done by reago) and encodes them
-    os.system("gt readjoiner prefilter -q -des -readset " + g.rj_dir + graph_fn + " -db " + g.rj_dir + graph_fn + ".fasta")
+    os.system("gt readjoiner prefilter -q -des -readset " + variables.rj_dir + graph_fn + " -db " + variables.rj_dir + graph_fn + ".fasta")
     # Determines all pairs suffix-prefix matches (SPMs) -l specifies an overlap of the reads and has a strong effect on the output
     os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + variables.rj_dir + graph_fn + "> /dev/null 2>&1" )
     # Converts the result into a txt file that's saved in the .edge.list output
