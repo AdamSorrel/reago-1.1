@@ -157,6 +157,8 @@ def parseInput(args):
     # todo : Figure out what that is
     variables.NEED_DEFLANK = False
 
+    variables.LUA_PATH = 'lua_scripts'
+
     #dat.update({'read_db':{}})
 
     #variables.update({'r_pos':{}})

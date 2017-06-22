@@ -105,7 +105,7 @@ print('Read database contains {} keys.'.format(db.dbsize()))
 #initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
 
 
-#combine_duplicated_reads(d) # Dereplicating a database and saving the derep. headers separated by a '|' character.
+dataPreparation.combine_duplicated_reads(variables, db) # Dereplicating a database and saving the derep. headers separated by a '|' character.
 
 #Saving database for future use in fun get_assemblie
 

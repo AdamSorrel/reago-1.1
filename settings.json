@@ -18,4 +18,5 @@
 "READ_LEN":100,
 "output_dir":"output/",
 "filename":"filtered/filtered.fasta",
-"NEED_DEFLANK":false}
+"NEED_DEFLANK":false,
+"LUA_PATH":"lua_scripts"}

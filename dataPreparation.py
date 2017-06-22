@@ -69,7 +69,14 @@ def database_init(variables, db):
 
     return
 
-def combine_duplicated_reads(dat):
+def combine_duplicated_reads(variables, db):
+
+    # Loading lua script for database splitting
+    with open(variables.LUA_PATH + '/databaseSplit.lua', 'r') as f:
+        databaseSplit = f.open()
+        print(databaseSplit)
+        quit()
+
     # Dereplicates database reads
     sequence_to_read_id = {}
     # Iterating through the read_db and saving seq to a new dictionary
