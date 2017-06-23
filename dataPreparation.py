@@ -72,11 +72,17 @@ def database_init(variables, db):
 def combine_duplicated_reads(variables, db):
 
     # Loading lua script for database splitting
-    with open(variables.LUA_PATH + '/databaseSplit.lua', 'r') as f:
-        databaseSplit = f.open()
-        print(databaseSplit)
-        quit()
+    with open(variables.LUA_PATH + '/uniqueSeq.lua', 'r') as f:
+        uniqueSeqScript = f.read()
 
+    # Registering lua script to the server and retrieving the pointer
+    uniqueSeq = db.register_script(uniqueSeqScript)
+
+    start = time.time()
+    uniqueSeq(keys=['read_sequence', 'hashNames', 'dereplicated'])
+    print('It took', time.time() - start, 'seconds to dereplicate sequences.')
+
+    quit()
     # Dereplicates database reads
     sequence_to_read_id = {}
     # Iterating through the read_db and saving seq to a new dictionary
