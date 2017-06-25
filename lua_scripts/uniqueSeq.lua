@@ -27,19 +27,6 @@ repeat
             -- Retrieving sequence itself in a +1 position from the local counter
             local seq = output[2][1+counter]
 
-            -- TODO : This might not be necessary
-            --if seq == nil then
-            --    do return "Sequence nil" end
-            --end
-
-            -- Retrieving beginning of the sequence in length specified by ARGV[1]
-            -- local subSeq = string.sub(seq, 1, tonumber(KEYS[3]))
-            -- TODO : Resolve why is this happening:
-            -- Checking if the subset sequence isn't longer then it should be
-            --if #subSeq > tonumber(ARGV[1]) then
-            --    do return subSeq end
-            --end
-
             -- Saving sequence in a hash with the name of the previously retrieved beginning
             redis.call("SADD", seq, id)
             -- Adding the name of the hash in a set who's name is specified in ARGV[2]
