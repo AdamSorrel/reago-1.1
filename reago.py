@@ -7,11 +7,14 @@ from argparse import RawTextHelpFormatter
 from reagoFunctions import *
 from parseInput import parseInput
 import dataPreparation
+from createRJGraph import create_graph_using_rj
+from subgraph import subgraph_treatment
+
 import redis
 
 # TODO : phase out global variables
 # Imports global settins file (defining global variables)
-import globalVariables as g
+#import globalVariables as g
 
 import multiprocessing as mp
 
@@ -100,37 +103,39 @@ db = redis.StrictRedis('localhost', port = 6379)
 # Initialising databases
 dataPreparation.database_init(variables, db)
 
-print('Read database contains {} keys.'.format(db.dbsize()))
-
 #initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
-
 
 dataPreparation.combine_duplicated_reads(variables, db) # Dereplicating a database and saving the derep. headers separated by a '|' character.
 
 #Saving database for future use in fun get_assemblie
 
-print('It took', time.time()-start, 'seconds to prepare databases.')
-start = time.time()
+# Generated output file directory for dereplicated sequences
+db.save()
+# Checking if a directory 'original database' exists and if not creating it
+if not os.path.exists(variables.rj_dir + 'dereplicated_database'):
+    os.mkdir(variables.rj_dir + 'dereplicated_database')
 
-print (timestamp(), "Initializing overlap graph...")
+# Copying backup database in the original directory file
+shutil.copy('dump.rdb', variables.rj_dir + 'dereplicated_database')
+
+print (timestamp(), "Initializing overlap graph wish ReadJoiner...")
 # Generating a DiGraph with a readjoiner using a file 'graph'.
-G = create_graph_using_rj("graph", variables, db)
+G = create_graph_using_rj(variables, db)
 # Passing the DiGraph to to networkx
 # more info in https://networkx.github.io/documentation/development/reference/generated/networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs.html#networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs)
 
-quit()
 subgraphs = nx.weakly_connected_component_subgraphs(G)
 
 # Retrieving scaffold candidates and full genes from the subgraphs
 print (timestamp(), "Recovering 16S rRNAs...")
+
+# TODO : Move list of results to Redis database
 # Starting lists of results
 full_genes = []
 scaffold_candidates = []
 
 print('It took', time.time()-start, 'second to prepare main graph.')
 start = time.time()
-
-quit()
 
 #num = 0
 # Looping through the output of networkx
@@ -147,7 +152,12 @@ quit()
 #p.start(p)
 
 for subgraph in subgraphs:
-    full_genes,scaffold_candidates = subgraph_treatment(subgraph)
+    start = time.time()
+
+    full_genes,scaffold_candidates = subgraph_treatment(subgraph, db, variables)
+
+    print('It took', time.time() - start, 'second to process a subgraph.')
+
     #p = multiprocessing.Process(target=worker)
     #jobs.append(p)
     #p.start()
