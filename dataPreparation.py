@@ -75,34 +75,22 @@ def combine_duplicated_reads(variables, db):
     with open(variables.LUA_PATH + '/uniqueSeq.lua', 'r') as f:
         uniqueSeqScript = f.read()
 
+    with open(variables.LUA_PATH + '/dereplicate.lua', 'r') as f:
+        dereplicate = f.read()
+
     # Registering lua script to the server and retrieving the pointer
     uniqueSeq = db.register_script(uniqueSeqScript)
+    dereplicate = db.register_script(dereplicate)
 
     start = time.time()
+
     uniqueSeq(keys=['read_sequence', 'hashNames', 'dereplicated'])
+
+    dereplicate(keys=['hashNames', 'read_sequence'])
+
     print('It took', time.time() - start, 'seconds to dereplicate sequences.')
 
     quit()
-    # Dereplicates database reads
-    sequence_to_read_id = {}
-    # Iterating through the read_db and saving seq to a new dictionary
-    # If sequence already exists in a dictionary, it's not passed in anymore
-    for seq_id, seq in dat.read_db.items():
-        if seq not in sequence_to_read_id:
-            sequence_to_read_id[seq] = []
-        # Read ids of dereplicated sequences are appended to the original key as a list
-        sequence_to_read_id[seq].append(seq_id)
-
-    read_db_cleaned = {}
-    # Iterating through the dictionary of dereplicated reads
-    for seq in sequence_to_read_id:
-        # Joining dereplicated reads with the '|' separator
-        new_id = "|".join(sequence_to_read_id[seq])
-        # Saving in the new database
-        read_db_cleaned[new_id] = seq
-
-    dat.read_db = read_db_cleaned
-
     return None
 
 # I don't think this is a necessary database.
