@@ -2,9 +2,9 @@ import os
 import os.path
 import time
 import networkx as nx
-#import pygraphviz as pgv
 import operator
 import shutil
+import redis
 
 # Imports global variables
 #import globalVariables as g
@@ -32,32 +32,18 @@ def write_frag(data, variables):
             frag_cnt += 1
 
 
-def write_fa(sequence_container,filename, width):
+def write_fa_redis(db,filename, width):
     # This function saves a dictionary of sequences into a file
 
     with open(filename, "w") as fOut:
-        # Iterating over the dictionary (or list)
-        for elem in sequence_container:
-            if type(sequence_container) == list:
-                sequence_id, sequence = elem
-            elif type(sequence_container) == dict:
-                sequence_id, sequence = elem, sequence_container[elem]
+        # count : rough estimate of number of returned sequences per request. Can vary quite a lot.
 
-            # If header doesn't already start with a '>' character, it will be added
-            if sequence_id[0] != '>':
-                sequence_id = '>' + sequence_id
+        for header, sequence in db.hscan_iter('read_sequence', count=500):
 
-            # Saving output
-            fOut.write(sequence_id + '\n')
-            # This is a flag added externally. Not sure why TBH.
-            # The whole sequence is saved if width == 0.
-            if width == 0:
-                fOut.write(sequence + '\n')
-            # If width != 0, sequence is truncated
-            else:
-                while sequence:
-                    fOut.write(sequence[:width] + '\n')
-                    sequence = sequence[width:]
+            fOut.write(">"+header.decode("UTF-8")+"\n")
+            fOut.write(sequence.decode("UTF-8")+"\n")
+
+    return
 
 def timestamp():
     # Formating time stamp for in-line output
@@ -69,183 +55,6 @@ def n_read_in_node(node):
     return len(read_list)
 
 
-
-def create_graph_using_rj(graph_fn, variables, read_db):
-    # Wrapper function for the readjoiner
-    # Accepts the dereplicated read database + graph_fn ("graph")
-
-    # This generates a null graph with networkx
-    # More info can be found here: https://networkx.github.io/documentation/development/reference/classes.digraph.html
-    # A DiGraph stores nodes and edges with optional data, or attributes.
-    G = nx.DiGraph()
-
-    # Generated output file directory for dereplicated sequences
-    read_db.save()
-    # Checking if a directory 'original database' exists and if not creating it
-    if not os.path.exists(variables.rj_dir + 'dereplicated_database'):
-        os.mkdir(variables.rj_dir + 'dereplicated_database')
-
-    # Copying backup database in the original directory file
-    shutil.copy('dump.rdb', variables.rj_dir + 'dereplicated_database')
-
-    #non_dup_fn = g.rj_dir + graph_fn + ".fasta"
-
-    ### Not saving any sequences now. Old database is
-    # Saving sequence database in a file using width 0, which means saving the whole sequence.
-    #write_fa(dat.read_db,non_dup_fn, 0)
-
-    # This following functions generates files 'graph.fasta', 'graph.set.des', 'graph.set.esq', 'graph.set.rit' and 'graph.set.sds'
-    # 'graph.fasta' is dereplicated file
-    # 'graph.set.des' are headers of dereplicated files (most likely)
-
-    # The 'prefilter' option removes all duplicate reads (already done by reago) and encodes them
-    os.system("gt readjoiner prefilter -q -des -readset " + variables.rj_dir + graph_fn + " -db " + variables.rj_dir + graph_fn + ".fasta")
-    # Determines all pairs suffix-prefix matches (SPMs) -l specifies an overlap of the reads and has a strong effect on the output
-    os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + variables.rj_dir + graph_fn + "> /dev/null 2>&1" )
-    # Converts the result into a txt file that's saved in the .edge.list output
-    os.system("gt readjoiner spmtest -readset " + variables.rj_dir + graph_fn + ".0 -test showlist > " + variables.rj_dir + graph_fn + ".edge.list")
-
-    # Originals
-    #os.system("gt readjoiner prefilter -q -des -readset " + rj_dir + graph_fn+ ".set -db " + rj_dir + graph_fn + ".fasta")
-    #os.system("gt readjoiner overlap -memlimit 100MB -q -l " + str(MIN_OVERLAP) + " -readset " + rj_dir + graph_fn + ".set > /dev/null 2>&1")
-    #os.system("gt readjoiner spmtest -readset " + rj_dir + graph_fn + ".set.0 -test showlist > " + rj_dir + graph_fn + ".edge.list")
-
-    # Read map dictionary
-    read_map = {}
-    # Count
-    cnt = 0
-    with open(variables.output_dir + "rj/" + graph_fn + ".des", encoding = "windows-1250") as fSetDes:
-        for line in fSetDes:
-            read_map[str(cnt)] = line[:-1]
-            cnt += 1
-
-    with open(variables.output_dir + "rj/" + graph_fn + ".edge.list",encoding = "windows-1250") as fEdgeList:
-        for line in fEdgeList:
-            # chr(45) is a dash ('-'). Specifying the ASCII code for compatibility sake
-            if chr(45) in line:
-                continue
-            read_1, read_2, overlap = line.split(" + ")
-            read_id_1, read_id_2 = read_map[read_1], read_map[read_2]
-            G.add_edge(read_id_1, read_id_2, overlap=int(overlap))
-
-    return G
-
-def correct_sequencing_error(G, ratio):
-    # This sequence takes the subgraph from networkx function and a variable 'ratio'
-    # G.nodes  returns a list of nodes of the network
-    if len(G.nodes()) <= 1:
-        return
-
-    alignment_to_starting_node = {}
-    # List of starting nodes
-    starting_nodes = []
-
-    # Set is an unordered collection of items where every element is unique
-    visited = set([])
-    # Looping over nodes and determining their predecessors, if there are none, the node is declared a 'starting node'
-    for node_str in G.nodes():
-        if len(G.predecessors(node_str)) == 0:
-            starting_nodes.append(node_str) # every node represents a read
-
-    # Looping over starting nodes
-    for starting_node in starting_nodes:
-        # Saving a sub-dicionary with the key value of each starting node
-        alignment_to_starting_node[starting_node] = {}
-        alignment_to_starting_node[starting_node][starting_node], max_st_pos = 0, 0
-
-        # Queue starting with the starting node
-        queue = [starting_node] # BFS
-
-        # Looping until the queue is empty
-        # This loop effectively crawls through the network starting with a starting node and crawling through successors
-        while queue != []:
-            # Returns and removes an item from a defined position
-            cur = queue.pop(0)
-            # Visited is defined above the loop over starting nodes
-            # If starting nodes have been visited, the whole loop is skipped
-            if cur in visited:
-                continue
-            else:   # Starting nodes that have not been visited are added to the 'visited' list
-                visited.add(cur) # ownership of cur
-
-            # Retreaves the list of successors
-            successors = G.successors(cur)
-            # Successors are added to the queque
-            queue += successors
-
-            # For each element in the list of successors:
-            for successor in successors:
-                # This retrieves the overlap value of the successor from the G network
-                overlap = G[cur][successor]['overlap']
-                # This probably determines the position of the aligned read
-                alignment_to_starting_node[starting_node][successor] \
-                        = alignment_to_starting_node[starting_node][cur] + g.READ_LEN - overlap
-                # Maximum starting position (probably which read is furthers away of the starting node)
-                max_st_pos = max(max_st_pos, alignment_to_starting_node[starting_node][successor])
-
-        # Looping over all successors from a particular starting node
-        msa = []
-        for successor in alignment_to_starting_node[starting_node]:
-            # Reads are possitionned absolutely adding empty lines before them
-            try:
-                msa.append([" " * alignment_to_starting_node[starting_node][successor] + dat.read_db[successor], successor])
-            except:
-                import pdb; pdb.set_trace()
-            # MSA would be actually interesting to print out at some point
-
-        # correcting...
-        # Iterating between maximum starting position to the end of the particular read
-        for i in range(max_st_pos + g.READ_LEN):
-            # Gathering base statistics
-            composition = {'A': 0, 'C': 0, 'G': 0, 'T': 0, 'U': 0}
-            # List of reads that were already accounted for in the base pair statistics
-            involved_read = []
-
-            # Aligned read : sequence of a read
-            # Read id : identificator
-            for aligned_read, read_id in msa: # ____ACGATGC..ACGATC 23431.CAJ.1
-                # If i isn't an empty character (introduced with the alignment) AND
-                # i doesn't exceed the aligned read length
-                if i < len(aligned_read) and aligned_read[i] != ' ':
-                    # number of overlapping reads at a current position (+1) is added to the dictionary composition of key = current basepair position
-                    composition[aligned_read[i]] += len(read_id.split("|")) + 1
-                    # Adding the read_id to the list of already checked  reads
-                    involved_read.append(read_id)
-
-            # Total count of every observed base
-            ttl_cnt = sum(composition[k] for k in composition)
-
-            # Determining the dominant base
-            dominant = 'X'
-            # Looping over bases in the composition dict
-            for base in composition:
-                # Retrieving base count
-                base_cnt = composition[base]
-                # Should the base count be higher then a pre-set ratio, dominant base is assumed
-                # 3 out of 4 : 3/(4-3+1)=3/2 => Base IS NOT dominant
-                # 10 out of 11 : 10/(11-10+1)=10/2=5 => Base IS dominant
-                # This implies, that if 1 in 10 bases is different, it will automatically be corrected.
-                # It is questionable whether this is desirable in microbial communities where abundance of organisms can vary on a scale of many folds
-                if float(base_cnt) / ((ttl_cnt - base_cnt) + 1) > ratio:
-                    dominant = base
-                    break
-
-            # If there is no dominant base, the rest of the loop is skipped
-            if dominant == 'X': # when no dominant base
-                continue
-
-            # Looping over all ids in involved reads list (the one that was generated by splitting read ID of dereplicated reads)
-            for read_id in involved_read:
-                # Retreating the sequence of the read by its ID
-                orig_seq = list(dat.read_db[read_id])
-                # Retreaving the currently inspected base
-                cur_base = orig_seq[i - alignment_to_starting_node[starting_node][read_id]]
-                # Should the ratio of a current base be lower then the ERROR_CORRECTION_THRESHOLD (user input)
-                if float(composition[cur_base]) / ttl_cnt < g.ERROR_CORRECTION_THRESHOLD:
-                    # The base is replaced by a dominant base
-                    orig_seq[i - alignment_to_starting_node[starting_node][read_id]] = dominant
-                    # Joining the read back together and returning it to the read_db
-                    dat.read_db[read_id] = "".join(orig_seq)
 
 def correct_sequencing_error_reverse(G, ratio):
     # Saving a sub-dicionary with the key value of each starting node
