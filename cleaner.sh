@@ -20,3 +20,6 @@ echo 'removed output/rj/graph.rlt'
 
 rm output/rj/graph.sds
 echo 'removed output/rj/graph.sds'
+
+echo 'Database flushed'
+redis-cli FLUSHALL
