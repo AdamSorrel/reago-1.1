@@ -4,6 +4,17 @@ from celery import Celery
 
 #@app.subgraph
 def subgraph_treatment(subgraph, db, variables):
+
+    nodeList = []
+    for node in subgraph.nodes():
+        nodeList.append(node)
+
+    nodeSequences = db.hmget('read_sequence', nodeList)
+
+    readDatabase = {}
+    for node, sequence in zip(nodeList, nodeSequences):
+        readDatabase[node] = sequence.decode("UTF-8")
+
     #filename = "subgaph" + str(num) + ".eps"
     #draw_graph(subgraph, filename)
     #num += 1
@@ -14,7 +25,7 @@ def subgraph_treatment(subgraph, db, variables):
 
     # TODO : Change this - bases that reappear twice identical are NOT sequencing errors
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold
-    correct_sequencing_error(subgraph, db, variables, 5)
+    correct_sequencing_error(subgraph, readDatabase, variables, 5)
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold in a reverse sense
     correct_sequencing_error_reverse(subgraph, 5)
@@ -46,7 +57,7 @@ def subgraph_treatment(subgraph, db, variables):
 
     return full_genes,scaffold_candidates
 
-def correct_sequencing_error(subgraph, db, variables, ratio):
+def correct_sequencing_error(subgraph, readDatabase, variables, ratio):
     # This sequence takes the subgraph from networkx function and a variable 'ratio'
 
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
@@ -98,25 +109,31 @@ def correct_sequencing_error(subgraph, db, variables, ratio):
             for successor in successors:
                 # This retrieves the overlap value of the successor from the G network
                 overlap = subgraph[current][successor]['overlap']
-                # This determines the position of the aligned read
+                # Getting a current read length
+                readLength = successor.split(';')[1].split('=')[1]
+                # This determines the position of the aligned read relative to the beginning of the starting node
                 alignment_to_starting_node[starting_node][successor] \
-                        = alignment_to_starting_node[starting_node][current] + variables.READ_LEN - overlap
+                        = alignment_to_starting_node[starting_node][current] + int(readLength) - overlap
                 # Maximum starting position (probably which read is furthers away of the starting node)
                 max_start_position = max(max_start_position, alignment_to_starting_node[starting_node][successor])
 
         # Looping over all successors from a particular starting node
-        msa = []
+        multipleSequenceAlighnment = []
         for successor in alignment_to_starting_node[starting_node]:
             # Reads are possitionned absolutely adding empty lines before them
-            try:
-                msa.append([" " * alignment_to_starting_node[starting_node][successor] + dat.read_db[successor], successor])
-            except:
-                import pdb; pdb.set_trace()
+            multipleSequenceAlighnment.append([" " * alignment_to_starting_node[starting_node][successor] + readDatabase[successor], successor])
             # MSA would be actually interesting to print out at some point
+
+        MSAprint = []
+        for msa in multipleSequenceAlighnment:
+            MSAprint.append(msa[0])
+        with open('subraph.txt', 'w') as f:
+                f.write('\n'.join(MSAprint))
 
         # correcting...
         # Iterating between maximum starting position to the end of the particular read
-        for i in range(max_start_position + g.READ_LEN):
+        # TODO : Implement proper read length instead of 100 vthe
+        for i in range(max_start_position + 100):
             # Gathering base statistics
             composition = {'A': 0, 'C': 0, 'G': 0, 'T': 0, 'U': 0}
             # List of reads that were already accounted for in the base pair statistics
