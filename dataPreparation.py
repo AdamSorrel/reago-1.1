@@ -78,19 +78,24 @@ def combine_duplicated_reads(variables, db):
     with open(variables.LUA_PATH + '/dereplicate.lua', 'r') as f:
         dereplicate = f.read()
 
+    with open(variables.LUA_PATH + '/addLength.lua', 'r') as f:
+        addLength = f.read()
+
     # Registering lua script to the server and retrieving the pointer
     uniqueSeq = db.register_script(uniqueSeqScript)
     dereplicate = db.register_script(dereplicate)
+    addLength = db.register_script(addLength)
 
     start = time.time()
 
     uniqueSeq(keys=['read_sequence', 'hashNames', 'dereplicated'])
 
-    dereplicate(keys=['hashNames', 'read_sequence'])
+    dereplicate(keys=['hashNames', 'read_sequence', 'read_position', 'template_position'])
+
+    addLength(keys=['read_sequence'])
 
     print('It took', time.time() - start, 'seconds to dereplicate sequences.')
 
-    quit()
     return None
 
 # I don't think this is a necessary database.
