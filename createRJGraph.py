@@ -28,7 +28,7 @@ def create_graph_using_rj(variables, db):
     # The 'prefilter' option removes all duplicate reads (already done by reago) and encodes them
     os.system("gt readjoiner prefilter -q -des -readset " + graph_filename + " -db " + variables.rj_dir + 'dereplicated_database/dereplicated.fasta')
     # Determines all pairs suffix-prefix matches (SPMs) -l specifies an overlap of the reads and has a strong effect on the output
-    os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + graph_filename + "> /dev/null 2>&1" )
+    os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + graph_filename + "> rj.log" )
     # Converts the result into a txt file that's saved in the .edge.list output
     os.system("gt readjoiner spmtest -readset " + graph_filename + ".0 -test showlist > " + graph_filename + ".edge.list")
 
@@ -39,10 +39,14 @@ def create_graph_using_rj(variables, db):
     read_map = {}
     # Count
     cnt = 0
-    with open(graph_filename + ".des", encoding="windows-1250") as fSetDes:
-        for line in fSetDes:
-            read_map[str(cnt)] = line[:-1]
-            cnt += 1
+    with open(graph_filename + ".des", encoding='windows-1250') as fSetDes:
+        try:
+            for line in fSetDes:
+                read_map[str(cnt)] = line[:-1]
+                cnt += 1
+        except:
+            print('Issue raised with {}'.format(line))
+            quit()
 
     with open(graph_filename + ".edge.list", encoding="windows-1250") as fEdgeList:
         for line in fEdgeList:
