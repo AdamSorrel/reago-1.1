@@ -126,10 +126,11 @@ def correct_sequencing_error(subgraph, readDatabase, variables, ratio):
 
         MSAprint = []
         for msa in multipleSequenceAlighnment:
-            MSAprint.append(msa[0])
+            s = "\t".join(msa)
+            MSAprint.append(s)
         with open('subraph.txt', 'w') as f:
                 f.write('\n'.join(MSAprint))
-
+        quit()
         # correcting...
         # Iterating between maximum starting position to the end of the particular read
         # TODO : Implement proper read length instead of 100 vthe

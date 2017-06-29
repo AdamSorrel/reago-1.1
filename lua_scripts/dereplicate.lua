@@ -3,7 +3,6 @@
 -- Date: 23/06/17
 -- Time: 14:58
 -- To change this template use File | Settings | File Templates.
-
 -- KEYS[1] is a list of unique sequences (hashNames)
 -- KEYS[2] is a original storage of all equences and keys
 -- KEYS[3] is a read position database

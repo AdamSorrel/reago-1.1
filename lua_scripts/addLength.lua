@@ -26,10 +26,10 @@ repeat
             -- Retrieving sequence itself in a +1 position from the local counter
             local seq = output[2][1+counter]
 
-            local new_id = id .. "; len=" .. #seq
+            local new_id = id .. ";len=" .. #seq
 
             redis.call("HDEL", KEYS[1], id)
-            redis.call("HSET", KEYS[1], new_id, seq)
+            redis.call("HSET", KEYS[1] .. "_new", new_id, seq)
 
             -- Incrementing counter by two position (skipping sequence position)
             counter = counter + 2
@@ -38,5 +38,6 @@ repeat
 
 until tonumber(cursor) == 0
 
-return true
+redis.call('RENAME', KEYS[1] .. "_new", KEYS[1])
 
+return true
