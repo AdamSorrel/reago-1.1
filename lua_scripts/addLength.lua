@@ -6,9 +6,6 @@
 -- To change this template use File | Settings | File Templates.
 --
 
--- KEYS[1] is a list of unique sequences
--- KEYS[2] is a original storage of all equences and keys
-
 
 redis.replicate_commands()
 redis.set_repl(redis.REPL_NONE)
@@ -38,6 +35,7 @@ repeat
 
 until tonumber(cursor) == 0
 
-redis.call('RENAME', KEYS[1] .. "_new", KEYS[1])
+redis.call("RENAME", KEYS[1] .. "_new", KEYS[1])
 
 return true
+
