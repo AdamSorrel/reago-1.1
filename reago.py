@@ -102,7 +102,6 @@ db = redis.StrictRedis('localhost', port = 6379)
 
 # Initialising databases
 dataPreparation.database_init(variables, db)
-
 #initialize_read_pos(variables) # Sets read position database to 0. Saving database for future use in fun get_assemblie
 
 dataPreparation.combine_duplicated_reads(variables, db) # Dereplicating a database and saving the derep. headers separated by a '|' character.
@@ -120,7 +119,7 @@ shutil.copy('dump.rdb', variables.rj_dir + 'dereplicated_database')
 
 print (timestamp(), "Initializing overlap graph wish ReadJoiner...")
 # Generating a DiGraph with a readjoiner using a file 'graph'.
-G = create_graph_using_rj(variables, db)
+G = create_graph_using_rj("graph", variables, db)
 # Passing the DiGraph to to networkx
 # more info in https://networkx.github.io/documentation/development/reference/generated/networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs.html#networkx.algorithms.components.weakly_connected.weakly_connected_component_subgraphs)
 

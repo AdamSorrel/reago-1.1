@@ -19,18 +19,20 @@ def database_init(variables, db):
                 # read id, template start, template end, query start, query end
                 read_id, template_position_start, template_position_end, sequence_start, sequence_end = line[1:].split()
                 # query database start and end
-                read_position = [int(sequence_start), int(sequence_end)]
+                #read_position = [int(sequence_start), int(sequence_end)]
                 # Beginning and end position within the template
-                template_position = [int(template_position_start), int(template_position_end)]
+                template_position = template_position_start + ',' + template_position_end
 
                 counter = counter + 1
             else:
                 # Sequence is saved (without the last character) in the read dictionary (r)
                 read_sequence = line[:-1]
 
+                read_id = read_id + ';len=' + str(len(read_sequence)) + ';read_position=' + str(0) + ';template_position=' + template_position
+
                 pipe.hset('read_sequence', read_id, read_sequence)
-                pipe.hset('read_position', read_id, 0)
-                pipe.hset('template_position', read_id, template_position)
+                #pipe.hset('read_position', read_id, 0)
+                #pipe.hset('template_position', read_id, template_position)
 
                 #pipe.hmset(database_key, database_value)
 
@@ -78,13 +80,13 @@ def combine_duplicated_reads(variables, db):
     with open(variables.LUA_PATH + '/dereplicate.lua', 'r') as f:
         dereplicate = f.read()
 
-    with open(variables.LUA_PATH + '/addLength.lua', 'r') as f:
-        addLength = f.read()
+    #with open(variables.LUA_PATH + '/addLength.lua', 'r') as f:
+    #    addLength = f.read()
 
     # Registering lua script to the server and retrieving the pointer
     uniqueSeq = db.register_script(uniqueSeqScript)
     dereplicate = db.register_script(dereplicate)
-    addLength = db.register_script(addLength)
+    #addLength = db.register_script(addLength)
 
     start = time.time()
 
@@ -92,7 +94,7 @@ def combine_duplicated_reads(variables, db):
 
     dereplicate(keys=['hashNames', 'read_sequence', 'read_position', 'template_position'])
 
-    addLength(keys=['read_sequence'])
+    #addLength(keys=['read_sequence'])
 
     print('It took', time.time() - start, 'seconds to dereplicate sequences.')
 

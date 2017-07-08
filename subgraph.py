@@ -1,5 +1,6 @@
 from celery import Celery
 import numpy as np
+from createRJGraph import create_graph_using_rj
 
 #app = Celery('subgraph', broker = 'amqp://localhost', backend='amqp')
 
@@ -29,24 +30,25 @@ def subgraph_treatment(subgraph, db, variables):
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold in a reverse sense
     correct_sequencing_error_reverse(subgraph, readDatabase)
-    quit()
-    # Dictionary of subgaph reads
-    subgraph_read_db = {}
+
+    # Dictionary of subgaph reads (already happened above)
+    #subgraph_read_db = {}
     # Retrieving a node (e.g. '2403.1') from the list of a subgaph nodes (e.g. ['2403.1', '1611.2', '1107.2'])
-    for node in subgraph.nodes():
-        # Building a database of reads from each of the nodes
-        subgraph_read_db[node] = g.read_db[node]
+    # for node in subgraph.nodes():
+    #     Building a database of reads from each of the nodes
+    #     subgraph_read_db[node] = readDatabase[node]
 
     # Generating a DiGraph with a readjoiner using a file 'graph'.
-    subgraph = create_graph_using_rj("subgraph_temp")
-    subgraph = collapse_graph(subgraph, [])
+    subgraph = create_graph_using_rj("subgraph_temp", variables, readDatabase)
+    subgraph = collapse_graph(subgraph, [], readDatabase)
+
     subgraph = merge_bifurcation(subgraph)
     subgraph = remove_bubble(subgraph)
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
     subgraph = remove_isolated_node(subgraph)
 
     # Collapsing the subgraph that has been pre-treated by the above set of functions
-    subgraph = collapse_graph(subgraph, [])
+    subgraph = collapse_graph(subgraph, [], readDatabase)
 
     # Retrieving full genes (genes longer then user defined value) and partial scaffolds
     full, scaf = get_assemblie(subgraph)
@@ -168,6 +170,8 @@ def correct_sequencing_error(subgraph, readDatabase):
                 else:
                     print('Houston, we have a problem')
 
+    return
+
 def correct_sequencing_error_reverse(subgraph, readDatabase):
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
     if len(subgraph.nodes()) <= 1:
@@ -284,56 +288,112 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
                     multipleSequenceAlighnmentArray[divRowPosition[0][:], divColPosition[0][0]] = base
                 else:
                     print('Houston, we have a problem')
+    return
 
-                    # correcting...
-        # Iterating between maximum starting position to the end of the particular read
-        # for i in range(-min_st_pos + g.READ_LEN):
-        #     # Gathering base statistics
-        #     composition = {'A': 0, 'C': 0, 'G': 0, 'T': 0}
-        #     # List of reads that were already accounted for in the base pair statistics
-        #     involved_read = []
-        #     # Aligned read : sequence of a read
-        #     # Read id : identificator
-        #     for aligned_read, read_id in align_disp: # ____ACGATGC..ACGATC 23431.CAJ.1
-        #     # If i isn't an empty character (introduced with the alignment) AND
-        #     # i doesn't exceed the aligned read length
-        #         if i < len(aligned_read) and aligned_read[i] != ' ':
-        #             # number of overlapping reads at a current position (+1) is added to the dictionary composition of key = current basepair position
-        #             composition[aligned_read[i]] += len(read_id.split("|")) + 1
-        #             # Adding the read_id to the list of already checked  reads
-        #             involved_read.append(read_id)
-        #
-        #     # Total count of every observed base
-        #     ttl_cnt = sum(composition[k] for k in composition)
-        #
-        #     # Determining the dominant base
-        #     dominant = 'X'
-        #     # Looping over bases in the composition dict
-        #     for base in composition:
-        #         # Retrieving base count
-        #         base_cnt = composition[base]
-        #         # Should the base count be higher then a pre-set ratio, dominant base is assumed
-        #         # 3 out of 4 : 3/(4-3+1)=3/2 => Base IS NOT dominant
-        #         # 10 out of 11 : 10/(11-10+1)=10/2=5 => Base IS dominant
-        #         # This implies, that if 1 in 10 bases is different, it will automatically be corrected.
-        #         # It is questionable whether this is desirable in microbial communities where abundance of organisms can vary on a scale of many folds
-        #         if float(base_cnt) / ((ttl_cnt - base_cnt) + 1) > ratio:
-        #             dominant = base
-        #             break
-        #
-        #     # If there is no dominant base, the rest of the loop is skipped
-        #     if dominant == 'X': # when no dominant base
-        #         continue
-        #
-        #     # Looping over all ids in involved reads list (the one that was generated by splitting read ID of dereplicated reads)
-        #     for read_id in involved_read:
-        #         # Retreating the sequence of the read by its ID
-        #         orig_seq = list(dat.read_db[read_id])
-        #         # Retreaving the currently inspected base
-        #         cur_base = orig_seq[i - alignment_to_starting_node[starting_node][read_id]]
-        #         # Should the ratio of a current base be lower then the ERROR_CORRECTION_THRESHOLD (user input)
-        #         if float(composition[cur_base]) / ttl_cnt < g.ERROR_CORRECTION_THRESHOLD:
-        #             # The base is replaced by a dominant base
-        #             orig_seq[i - alignment_to_starting_node[starting_node][read_id]] = dominant
-        #             # Joining the read back together and returning it to the read_db
-        #             dat.read_db[read_id] = "".join(orig_seq)
+def collapse_graph(subgraph, candidates, readDatabase):
+    # Combining nodes in the networkx produced network
+    while True:
+        # Starting a list of nodes
+        nodes_to_combine = []
+
+        # If the variable 'candidates' is passed as an empty list, retrieve all nodes from a network
+        if not candidates:
+            all_node = subgraph.nodes()
+        # Otherwise work only with nodes supplied in the 'candidates' variable
+        else:
+            all_node = candidates
+
+        # Looping over nodes (either from the candidates variable or all nodes from networkx)
+        for node in all_node:
+            # Should both IN and OUT degrees be equal to 1 (no bifurcation?)
+            if subgraph.in_degree(node) == 1 and subgraph.out_degree(subgraph.predecessors(node)[0]) == 1:
+                nodes_to_combine.append(node)
+                # Should candidates be supplied, collapsed nodes will be removed from the list.
+                if candidates:
+                    candidates.remove(node)
+
+        # If thre are no nodes to combine, loop is exited.
+        if not nodes_to_combine:
+            break
+
+        # Looping through the list of nodes to combine
+        for node_to_combine in nodes_to_combine:
+            # Retrieving a predecessor node
+            predecessor = subgraph.predecessors(node_to_combine)[0]
+            # And level 2 predecessor
+            predecessors_predecessors = subgraph.predecessors(predecessor)
+            # Retrieving successor
+            successors = subgraph.successors(node_to_combine)
+
+            # Header is updated using '|' separating nodes (e.g. 605.2|1822.2|979.2|637.1)
+            # update graph
+            combined_node = predecessor.split(';')[0] + '|' + node_to_combine.split(';')[0]
+            # Retrieving the value of an overlap (number)
+            overlap_to_predecessor = subgraph[predecessor][node_to_combine]['overlap']
+
+            # Noting the new length of the combined sequences
+
+            newLength = int(predecessor.split(';')[1].split('=')[1]) + int(node_to_combine.split(';')[1].split('=')[1]) - overlap_to_predecessor
+
+            combined_node = str(combined_node) + ';len=' + str(newLength) + ';' + predecessor.split(';')[2] +\
+                            ';template_position=' + predecessor.split(';')[3].split('=')[0] + ',' + node_to_combine.split(';')[3].split('=')[1]
+
+            # Adding a combined node to the networkx graph G
+            subgraph.add_node(combined_node)
+            # Looping over 2.level predecessors
+            for predecessors_predecessor in predecessors_predecessors:
+                # overlap between predecessors and 2. level predecessors
+                o = subgraph[predecessors_predecessor][predecessor]['overlap']
+                # Adding an edge to the network G using combined nodes and overlap value
+                subgraph.add_edge(predecessors_predecessor, combined_node, overlap = o)
+
+            # Looping over the successors
+            for successor in successors:
+                # Retrieving the overlap value betwenn sucessor and the node to combine
+                o = subgraph[node_to_combine][successor]['overlap']
+                # Adding an edge to the network G using combined nodes and the overlap value
+                subgraph.add_edge(combined_node, successor, overlap = o)
+
+            # update sequences
+            # Retrieving the offset, counting from the overlap on
+            offset = len(readDatabase[predecessor]) - overlap_to_predecessor
+
+            # Updating the read positions by the offset determined above
+            readPosition = int(node_to_combine.split(';')[2].split('=')[1])
+            readPosition += offset
+
+            node_to_combine_new = node_to_combine.split(';')[0] + ';' + \
+                              node_to_combine.split(';')[1] + ';' +\
+                              'read_postition=' + str(readPosition) + ';' \
+                              + node_to_combine.split(';')[3]
+
+            # Updating the database entry
+            readDatabase[node_to_combine_new] = readDatabase[node_to_combine]
+            del readDatabase[node_to_combine]
+
+            # Retrieving the sequence of predecessor from the read_database (dictionary of all reads)
+            pred_seq = readDatabase[predecessor]
+            # Retrieving the sequence of node to combine from the read database (dictionary of all reads)
+            node_seq = readDatabase[node_to_combine_new]
+            # Combining the two reads (predecessor + overhang of the sequence node)
+            combined_seq = pred_seq + node_seq[overlap_to_predecessor:]
+
+            # Adding the combined read to the dictionary of all reads
+            readDatabase[combined_node] = combined_seq
+
+            # clean up
+            # Removing predecessor and node to commbine from the network
+            subgraph.remove_node(node_to_combine)
+            subgraph.remove_node(predecessor)
+
+            # Removing the just combined nodes (predecessor and node to combine) from the dictionary of all sequences
+            del readDatabase[predecessor]
+
+            # If node to combine still is in the list of nodes to combine, it's removed
+            if node_to_combine in nodes_to_combine:
+                nodes_to_combine.remove(node_to_combine)
+            # If predecessor is in the list of nodes to combine, it will be removed
+            if predecessor in nodes_to_combine:
+                nodes_to_combine.remove(predecessor)
+
+    return subgraph

@@ -32,19 +32,6 @@ def write_frag(data, variables):
             frag_cnt += 1
 
 
-def write_fa_redis(db,filename, width):
-    # This function saves a dictionary of sequences into a file
-
-    with open(filename, "w") as fOut:
-        # count : rough estimate of number of returned sequences per request. Can vary quite a lot.
-
-        for header, sequence in db.hscan_iter('read_sequence', count=500):
-
-            fOut.write(">"+header.decode("UTF-8")+"\n")
-            fOut.write(sequence.decode("UTF-8")+"\n")
-
-    return
-
 def timestamp():
     # Formating time stamp for in-line output
     return time.asctime()
@@ -53,99 +40,6 @@ def n_read_in_node(node):
     # Retreaving the number of reads in a given node
     read_list = node.split("|")
     return len(read_list)
-
-def collapse_graph(G, candidates):
-    # Combining nodes in the networkx produced network
-    while True:
-        # Starting a list of nodes
-        nodes_to_combine = []
-
-        # If the variable 'candidates' is passed as an empty list, retrieve all nodes from a network
-        if not candidates:
-            all_node = G.nodes()
-        # Otherwise work only with nodes supplied in the 'candidates' variable
-        else:
-            all_node = candidates
-
-        # Looping over nodes (either from the candidates variable or all nodes from networkx)
-        for node in all_node:
-            # Should both IN and OUT degrees be equal to 1 (no bifurcation?)
-            if G.in_degree(node) == 1 and G.out_degree(G.predecessors(node)[0]) == 1:
-                nodes_to_combine.append(node)
-                # Should candidates be supplied, collapsed nodes will be removed from the list.
-                if candidates:
-                    candidates.remove(node)
-
-        # If thre are no more nodes to combine, loop is exited.
-        if not nodes_to_combine:
-            break
-
-        # Looping through the list of nodes to combine
-        for node_to_combine in nodes_to_combine:
-            # Retrieving a predecessor node
-            predecessor = G.predecessors(node_to_combine)[0]
-            # And level 2 predecessor
-            predecessors_predecessors = G.predecessors(predecessor)
-            # Retrieving successor
-            successors = G.successors(node_to_combine)
-
-            # Header is updated using '|' separating nodes (e.g. 605.2|1822.2|979.2|637.1)
-            # update graph
-            combined_node = predecessor + '|' + node_to_combine
-            # Retrieving the value of an overlap (number)
-            overlap_to_predecessor = G[predecessor][node_to_combine]['overlap']
-
-            # Adding a combined node to the networkx graph G
-            G.add_node(combined_node)
-            # Looping over 2.level predecessors
-            for predecessors_predecessor in predecessors_predecessors:
-                # overlap between predecessors and 2. level predecessors
-                o = G[predecessors_predecessor][predecessor]['overlap']
-                # Adding an edge to the network G using combined nodes and overlap value
-                G.add_edge(predecessors_predecessor, combined_node, overlap = o)
-
-            # Looping over the successors
-            for successor in successors:
-                # Retrieving the overlap value betwenn sucessor and the node to combine
-                o = G[node_to_combine][successor]['overlap']
-                # Adding an edge to the network G using combined nodes and the overlap value
-                G.add_edge(combined_node, successor, overlap = o)
-
-            # update sequences
-            # Retrieving the offset, counting from the overlap on
-            offset = len(dat.read_db[predecessor]) - overlap_to_predecessor
-            # Looping through the headers (codes) of of combined reads
-            for read_id in node_to_combine.split('|'):
-                # Updating the read positions by the offset determined above
-                g.read_position_db[read_id] += offset
-
-            # Retrieving the sequence of predecessor from the read_database (dictionary of all reads)
-            pred_seq = dat.read_db[predecessor]
-            # Retrieving the sequence of node to combine from the read database (dictionary of all reads)
-            node_seq = dat.read_db[node_to_combine]
-            # Combining the two reads (predecessor + overhang of the sequence node)
-            combined_seq = pred_seq + node_seq[overlap_to_predecessor:]
-
-            # Adding the combined read to the dictionary of all reads
-            dat.read_db[combined_node] = combined_seq
-
-            # clean up
-            # Removing predecessor and node to commbine from the network
-            G.remove_node(node_to_combine)
-            G.remove_node(predecessor)
-
-            # Removing the just combined nodes (predecessor and node to combine) from the dictionary of all sequences
-            del dat.read_db[node_to_combine]
-            del dat.read_db[predecessor]
-
-            # If node to combine still is in the list of nodes to combine, it's removed
-            if node_to_combine in nodes_to_combine:
-                nodes_to_combine.remove(node_to_combine)
-            # If predecessor is in the list of nodes to combine, it will be removed
-            if predecessor in nodes_to_combine:
-                nodes_to_combine.remove(predecessor)
-
-    return G
 
 def merge_node(src_list, dst, shared, G, directionead_db):
     # src_list (e.g. tip_candidates)

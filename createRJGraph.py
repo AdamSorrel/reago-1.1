@@ -1,13 +1,20 @@
 import networkx as nx
-from reagoFunctions import write_fa_redis
 import os
 import time
+import tempfile
 
-def create_graph_using_rj(variables, db):
+def create_graph_using_rj(graphName, variables, db):
     # Wrapper function for the readjoiner
     # Accepts the dereplicated read database + graph_fn ("graph")
 
-    graph_filename = variables.rj_dir + 'graph'
+    graphName
+
+    if graphName.find('temp') != -1:
+        # Creating a temporary dictionary
+        tempdir = tempfile.TemporaryDirectory()
+        graph_filename = tempdir.name
+    else:
+        graph_filename = variables.rj_dir + graphName
 
     # This generates a null graph with networkx
     # More info can be found here: https://networkx.github.io/documentation/development/reference/classes.digraph.html
@@ -18,7 +25,10 @@ def create_graph_using_rj(variables, db):
 
     ### Not saving any sequences now. Old database is already saved
     # Saving sequence database in a file using width 0, which means saving the whole sequence.
-    write_fa_redis(db,variables.rj_dir+'dereplicated_database/dereplicated.fasta', 0)
+    if isinstance(db, dict) == True:
+        write_dict_as_fasta(db, graph_filename+'_dereplicated.fasta')
+    else:
+        write_fa_redis(db,graph_filename+'_dereplicated.fasta', 0)
 
     # This following functions generates files 'graph.fasta', 'graph.set.des', 'graph.set.esq', 'graph.set.rit' and 'graph.set.sds'
     # 'graph.fasta' is dereplicated file
@@ -26,7 +36,7 @@ def create_graph_using_rj(variables, db):
 
     # TODO : Implement length of insert and its size and variance
     # The 'prefilter' option removes all duplicate reads (already done by reago) and encodes them
-    os.system("gt readjoiner prefilter -q -des -readset " + graph_filename + " -db " + variables.rj_dir + 'dereplicated_database/dereplicated.fasta')
+    os.system("gt readjoiner prefilter -q -des -readset " + graph_filename + " -db " + graph_filename + '_dereplicated.fasta')
     # Determines all pairs suffix-prefix matches (SPMs) -l specifies an overlap of the reads and has a strong effect on the output
     os.system("gt readjoiner overlap -memlimit 100MB -l " + str(int(variables.MIN_OVERLAP)) + " -readset " + graph_filename + "> rj.log" )
     # Converts the result into a txt file that's saved in the .edge.list output
@@ -59,4 +69,30 @@ def create_graph_using_rj(variables, db):
 
     print('It took', time.time() - start, 'seconds to build the NetworkX object.')
 
+    # Removing temporary dictionary
+    if graphName.find('temp') != -1:
+        tempdir.cleanup()
+        print('Cleaning up temporary directory {}'.format(graph_filename))
+
     return G
+
+def write_fa_redis(db,filename, width):
+    # This function saves a dictionary of sequences into a file
+
+    with open(filename, "w") as fOut:
+        # count : rough estimate of number of returned sequences per request. Can vary quite a lot.
+
+        for header, sequence in db.hscan_iter('read_sequence', count=500):
+
+            fOut.write(">"+header.decode("UTF-8")+"\n")
+            fOut.write(sequence.decode("UTF-8")+"\n")
+
+    return
+
+def write_dict_as_fasta(db, output_filename):
+    with open(output_filename, 'w') as f:
+        for key, value in db.items():
+            f.write('>'+key+'\n')
+            f.write(value+'\n')
+
+    return
