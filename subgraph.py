@@ -44,6 +44,9 @@ def subgraph_treatment(subgraph, db, variables):
     subgraph = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readDatabase)
 
     subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+
+    print("Finish merging_bifurcation...")
+    quit()
     subgraph = remove_bubble(subgraph)
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
     subgraph = remove_isolated_node(subgraph)
@@ -337,7 +340,7 @@ def collapse_graph(subgraph, candidates, readDatabase):
             newLength = int(predecessor.split(';')[1].split('=')[1]) + int(node_to_combine.split(';')[1].split('=')[1]) - overlap_to_predecessor
 
             combined_node = str(combined_node) + ';len=' + str(newLength) + ';' + predecessor.split(';')[2] +\
-                            ';template_position=' + predecessor.split(';')[3].split('=')[0] + ',' + node_to_combine.split(';')[3].split('=')[1]
+                            ';template_position=' + predecessor.split(';')[3].split('=')[1]
 
             # Adding a combined node to the networkx graph G
             subgraph.add_node(combined_node)
@@ -408,7 +411,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
         # Looping over nodes in the network G
         for node in subgraph.nodes():
             # If node isn't in the network G, skip the loop
-            # Not sure how this ever happens, but it does.
+            # Not sure how this ever happens, but it does. Probably for nodes removed during the cycle.
             if node not in subgraph.nodes():
                 continue
 
@@ -450,7 +453,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
 
 
             # Merging the dst_nodes
-            merged_node = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+            merged_node = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, readDatabase=readDatabase, variables=variables, direction=1)
 
             # If the input isn't empty:
             if merged_node:
@@ -459,7 +462,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 collapse_candidate.add(node)
 
         # Calling a custom collapse function
-        subgraph = collapse_graph(G, list(collapse_candidate))
+        subgraph = collapse_graph(subgraph=subgraph, candidates=list(collapse_candidate), readDatabase=readDatabase)
 
         # fork in
         # Emptying a collapse_candidate set
@@ -496,11 +499,11 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 dst_node = max([[n_read_in_node(d), d] for d in dst_candidates])[1]  # only one dst node
                 dst_candidates.remove(dst_node)                                      # remove dst
                 # Looping over the dst_candidates list to find if there is a tip_candidate after removing the dst_node
-                dst_candidates = [d for d in dst_candidates if G.in_degree(d) == 0]   # and G.out_degree(d) == 1]  # only if its out-deg is 0, a node will be considered tip
+                dst_candidates = [d for d in dst_candidates if subgraph.in_degree(d) == 0]   # and G.out_degree(d) == 1]  # only if its out-deg is 0, a node will be considered tip
                 tip_candidates = tip_candidates.union(dst_candidates)
 
             # Merging the dst_nodes
-            merged_node = merge_node(tip_candidates, dst_node, node, subgraph, -1,variables.TIP_SIZE)
+            merged_node = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, variables=variables,readDatabase=readDatabase,direction=-1)
 
             # If the input isn't empty:
             if merged_node:
@@ -523,7 +526,7 @@ def n_read_in_node(node):
     read_name_list = node.split("|")
     return len(read_name_list)
 
-def merge_node(src_list, dst, shared, subgraph, readDatabase, variables):
+def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, direction):
     # src_list (e.g. tip_candidates)
     # src_list, dst and shared look about this: '1581.2|3294.2'
     # Number of allowed mismatches.

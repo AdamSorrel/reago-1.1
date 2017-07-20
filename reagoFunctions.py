@@ -395,18 +395,4 @@ def scaffold(scaffold_candidates):
 
 
 # for testing purpose
-def draw_graph(graph, filename):
-    agraph = pgv.AGraph()
-    for node in graph.nodes():
-        agraph.add_node(node)
-    for edge in graph.edges():
-        agraph.add_edge(edge)
-        node_1, node_2 = edge
-        agraph_edge = agraph.get_edge(node_1, node_2)
-        agraph_edge.attr["label"] = graph[node_1][node_2]["overlap"]
 
-    agraph.node_attr["shape"] = "box"
-    agraph.graph_attr.update(size='80,80')
-    agraph.layout()
-
-    agraph.draw(filename, prog = "dot")
