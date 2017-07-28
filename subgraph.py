@@ -43,10 +43,10 @@ def subgraph_treatment(subgraph, db, variables):
     subgraph = create_graph_using_rj("subgraph_temp", variables, readDatabase)
     subgraph = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readDatabase)
 
-    subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    # Merging bifurcation if there is less then N mistakes
+    # I'm taking it out for now. Sounds a bit dodgy
+    # subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
 
-    print("Finish merging_bifurcation...")
-    quit()
     subgraph = remove_bubble(subgraph)
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
     subgraph = remove_isolated_node(subgraph)
@@ -528,15 +528,16 @@ def n_read_in_node(node):
 
 def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, direction):
     # src_list (e.g. tip_candidates)
-    # src_list, dst and shared look about this: '1581.2|3294.2'
+    # src_list, dst and shared look like this: '1581.2|3294.2;...'
     # Number of allowed mismatches.
+    # TODO : Hardcoded mismatches
     N_MIS = 3
 
     # dst is a header of merged sequences (e.g. '2579.2|2295.1|1042.1')
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
     dst_seq  = readDatabase[dst]
     # retrieving overlap of the 'new' node with the node to merge with (shared)
-    dst_overlap = subgraph[shared][dst]['overlap']              if direction == 1 else subraph[dst][shared]["overlap"]
+    dst_overlap = subgraph[shared][dst]['overlap']              if direction == 1 else subgraph[dst][shared]["overlap"]
     # Sequence that's overhanging from the node to be merged with
     dst_remaining  = dst_seq[dst_overlap: ]              if direction == 1 else dst_seq[ :-dst_overlap][::-1]
 
@@ -544,11 +545,21 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     to_remove = []
     # List of nodes (e.g. tip candidates)
     to_merge  = []
+
+
+    if direction == -1:
+        print('Reverse direction!')
+
     for src in src_list:
         # Retrieving sequences of each of the listed nodes
-        src_seq  = readDatabase[src]
+        try:
+            src_seq  = readDatabase[src]
+        except:
+            print("Current src: {}".format(src))
+            print("This tip has already been dealt with.")
+            return None
         # Determining the overlap (integer) of the node with the node to be merged with
-        src_overlap = subgraph[shared][src]['overlap']          if direction == 1 else subgraph[src][shared]["overlap"]
+        src_overlap = subgraph[shared][src]['overlap']          if direction == 1 else subgraph[src][shared]['overlap']
         # Sequence that's overhanging from the node to be merged with
         src_remaining  = src_seq[src_overlap: ]          if direction == 1 else src_seq[ :-src_overlap][::-1]
 
@@ -560,13 +571,17 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         # Number of mismatches
         mis = 0
         # Looping over the bases of overhanging part of the new read
+        seqOver = []
         for i in range(min(len(src_remaining), len(dst_remaining))):
             # If the src overhang and dst overhang don't match add a mismatch
+            seqOver.append(src_remaining[i])
             if src_remaining[i] != dst_remaining[i]:
                 mis += 1
                 # If the number of mismatches is larger then defined above, break from the loop
                 if mis > N_MIS:
                     break
+        print('SeqOver : {}'.format(''.join(seqOver)))
+        print('Length SeqOver : {}'.format(len(seqOver)))
 
         # If the number of mismatches is larger then allowed above
         if mis > N_MIS:
@@ -578,12 +593,15 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         # Offset of the sequence to overlap
         offset = dst_overlap - src_overlap if direction == 1 else ((len(dst_seq) - dst_overlap) - (len(src_seq) - src_overlap))
 
-        # Adding the offset to the read position
-        for read_id in src.split("|"):
-            subgraph.read_position_db[read_id] += offset
+        # Adding the offset to the read position (of each read separately?)
+        new_read_position = str(int(src.split(';')[2].split('=')[1]) + offset)
+        new_read = src.split(';')[0] + ';' + src.split(';')[1] + ';' + 'read_position=' + new_read_position + ';' + src.split(';')[3]
+
+        # Saving the new read header with the old sequence
+        readDatabase[new_read] = readDatabase.pop(src) + src_remaining
 
         # Appending the new sequence to the list to merge
-        to_merge.append(src)
+        to_merge.append(new_read)
 
     # Should there be nothing to remove or merge and finish the function
     if not to_remove + to_merge:
@@ -594,16 +612,35 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         # Removing node from the network
         subgraph.remove_node(n)
 
+    # Merging old and new nodes
+    # e.g. dst : '719.1;len=100;read_position=0;template_position=765,853'
+    #      to_merge : '1758.2;len=100;read_position=4;template_position=769,857'
     if to_merge:
-        # Adding new sequences into the list in the header
-        new_node = dst + "|" + "|".join(to_merge)
-        # Changing the label (header) in the network
-        subgraph = nx.relabel_nodes(subgraph, {dst: new_node}, copy = False)
+        dst_split = dst.split(';')
+        dst_name = dst_split[0]
+        dst_len = num(dst_split[1].split('=')[1])
+        dst_read_position = dst_split[2].split('=')[1]
+        dst_template_position =dst_split[3].split('=')[1]
 
-        # Adding the new node in the final database
-        print("This really needs to be checked!")
-        quit()
-        readDatabase[new_node] = readDatabase.pop(dst)
+        to_merge_split = to_merge.split(';')
+        to_merge_name = to_merge_split[0]
+        to_merge_read_position = num(to_merge_split[2].split('=')[1])
+        to_merge_template_position = to_merge_split[3].split('=')[1]
+
+        new_length =  dst_len + to_merge_read_position
+        new_template_position = dst_template_position.split(',')[0] + to_merge_template_position.split(',')[1]
+
+        new_node_header = dst_name + '|' + to_merge_name + ';' + \
+                          'len=' + str(new_length) + \
+                          'read_position= ' + dst_read_position + \
+                          'template_position= ' + new_template_position
+
+
+        # Changing the label (header) in the network
+        subgraph = nx.relabel_nodes(subgraph, {dst: new_node_header}, copy = False)
+
+        # Adding the new node in the final database (THAT HAS ALREADY BEEN DONE!)
+        readDatabase[new_node_header] = readDatabase.pop(dst)
 
         # Looping through the list of nodes to merge
         for n in to_merge:
