@@ -55,7 +55,12 @@ def create_graph_using_rj(graphName, variables, db):
                 read_map[str(cnt)] = line[:-1]
                 cnt += 1
         except:
-            print('Issue raised with {}'.format(line))
+            # File is unruly and some odd character was appended to the end. Removing the unruly character and proceeding
+            print('Issue raised with {}'.format(fSetDes))
+            os.system('head -n -1' + fSetDes.name + '>' + fSetDes.name)
+            for line in fSetDes:
+                read_map[str(cnt)] = line[:-1]
+                cnt += 1
             quit()
 
     with open(graph_filename + ".edge.list", encoding="windows-1250") as fEdgeList:

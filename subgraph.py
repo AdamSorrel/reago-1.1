@@ -21,9 +21,8 @@ def subgraph_treatment(subgraph, db, variables):
     #draw_graph(subgraph, filename)
     #num += 1
 
-    # TODO full_genes and scaffold_candidates must be moved to REDIS
-    #full_genes = []
-    #scaffold_candidates = []
+    full_genes = []
+    scaffold_candidates = []
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold
 
@@ -45,17 +44,18 @@ def subgraph_treatment(subgraph, db, variables):
 
     # Merging bifurcation if there is less then N mistakes
     # I'm taking it out for now. Sounds a bit dodgy
-    # subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
 
-    subgraph = remove_bubble(subgraph)
+    subgraph = remove_bubble(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
-    subgraph = remove_isolated_node(subgraph)
+    subgraph = remove_isolated_node(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
 
     # Collapsing the subgraph that has been pre-treated by the above set of functions
     subgraph = collapse_graph(subgraph, [], readDatabase)
 
+    # TODO full_genes and scaffold_candidates must be moved to REDIS
     # Retrieving full genes (genes longer then user defined value) and partial scaffolds
-    full, scaf = get_assemblie(subgraph)
+    full, scaf = get_assemblie(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
     # Saving full genes
     full_genes += full
     # Saving scaffolds
@@ -302,13 +302,13 @@ def collapse_graph(subgraph, candidates, readDatabase):
 
         # If the variable 'candidates' is passed as an empty list, retrieve all nodes from a network
         if not candidates:
-            all_node = subgraph.nodes()
+            all_nodes = subgraph.nodes()
         # Otherwise work only with nodes supplied in the 'candidates' variable
         else:
-            all_node = candidates
+            all_nodes = candidates
 
         # Looping over nodes (either from the candidates variable or all nodes from networkx)
-        for node in all_node:
+        for node in all_nodes:
             # Should both IN and OUT degrees be equal to 1 (no bifurcation?)
             if subgraph.in_degree(node) == 1 and subgraph.out_degree(subgraph.predecessors(node)[0]) == 1:
                 nodes_to_combine.append(node)
@@ -344,7 +344,7 @@ def collapse_graph(subgraph, candidates, readDatabase):
 
             # Adding a combined node to the networkx graph G
             subgraph.add_node(combined_node)
-            # Looping over 2.level predecessors
+            # Attching the merged node + predecessor to a new predecessor (original predecessor's predecessor)
             for predecessors_predecessor in predecessors_predecessors:
                 # overlap between predecessors and 2. level predecessors
                 o = subgraph[predecessors_predecessor][predecessor]['overlap']
@@ -386,7 +386,7 @@ def collapse_graph(subgraph, candidates, readDatabase):
             readDatabase[combined_node] = combined_seq
 
             # clean up
-            # Removing predecessor and node to commbine from the network
+            # Removing predecessor and node to commbined from the network
             subgraph.remove_node(node_to_combine)
             subgraph.remove_node(predecessor)
 
@@ -447,7 +447,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 dst_node = max([[n_read_in_node(d), d] for d in dst_candidates])[1]  # only one dst node with maximum dst_candidates
                 dst_candidates.remove(dst_node)                                      # remove dst
                 # Looping over the dst_candidates list to find if there is a tip_candidate after removing the dst_node
-                dst_candidates = [d for d in dst_candidates if G.out_degree(d) == 0]
+                dst_candidates = [d for d in dst_candidates if subgraph.out_degree(d) == 0]
                 # Merging the dst_candidates with the tip_candidates
                 tip_candidates = tip_candidates.union(dst_candidates)
 
@@ -526,12 +526,23 @@ def n_read_in_node(node):
     read_name_list = node.split("|")
     return len(read_name_list)
 
+############################################
+#This needs to be thoroughly checked
+############################################
+
 def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, direction):
     # src_list (e.g. tip_candidates)
     # src_list, dst and shared look like this: '1581.2|3294.2;...'
+    # shared : node to merge with
+
     # Number of allowed mismatches.
     # TODO : Hardcoded mismatches
-    N_MIS = 3
+    # This basically means 0, since the number mistakes must be higher, not higher or equal
+    N_MIS = 1
+
+    ###########################################################
+    # Assumingly this part merges a predecessor
+    ###########################################################
 
     # dst is a header of merged sequences (e.g. '2579.2|2295.1|1042.1')
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
@@ -541,14 +552,19 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     # Sequence that's overhanging from the node to be merged with
     dst_remaining  = dst_seq[dst_overlap: ]              if direction == 1 else dst_seq[ :-dst_overlap][::-1]
 
+    new_sequence = readDatabase[shared] + dst_remaining
+    if len(new_sequence) != len(readDatabase[shared]) + len(dst_seq) - dst_overlap:
+        print("Wrong sequence length")
+        quit()
+
     # Starting list of nodes to remove and merge
     to_remove = []
     # List of nodes (e.g. tip candidates)
     to_merge  = []
 
-
-    if direction == -1:
-        print('Reverse direction!')
+    ###########################################################
+    # This part perhaps merges successors
+    ###########################################################
 
     for src in src_list:
         # Retrieving sequences of each of the listed nodes
@@ -558,13 +574,16 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
             print("Current src: {}".format(src))
             print("This tip has already been dealt with.")
             return None
+
         # Determining the overlap (integer) of the node with the node to be merged with
         src_overlap = subgraph[shared][src]['overlap']          if direction == 1 else subgraph[src][shared]['overlap']
         # Sequence that's overhanging from the node to be merged with
         src_remaining  = src_seq[src_overlap: ]          if direction == 1 else src_seq[ :-src_overlap][::-1]
 
+        # TODO : Determine the effect of this decision
         # Function counting reads in header, splitting by '|'
         # Number of reads in the src input (see above what that is)
+        # If nodes have very different number of reads, they will not be merged
         if n_read_in_node(src) >= 1.2 * n_read_in_node(dst):
             continue
 
@@ -580,9 +599,7 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
                 # If the number of mismatches is larger then defined above, break from the loop
                 if mis > N_MIS:
                     break
-        print('SeqOver : {}'.format(''.join(seqOver)))
-        print('Length SeqOver : {}'.format(len(seqOver)))
-
+        # TODO : This needs a revision. I really don't see the point of TIP_SIZE or why should this be relevant when there are many mismatches
         # If the number of mismatches is larger then allowed above
         if mis > N_MIS:
             # If number of reads in node is larger then the tip size
@@ -617,24 +634,26 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     #      to_merge : '1758.2;len=100;read_position=4;template_position=769,857'
     if to_merge:
         dst_split = dst.split(';')
-        dst_name = dst_split[0]
-        dst_len = num(dst_split[1].split('=')[1])
-        dst_read_position = dst_split[2].split('=')[1]
-        dst_template_position =dst_split[3].split('=')[1]
+        name = dst_split[0]
+        length = int(dst_split[1].split('=')[1])
+        read_position = dst_split[2].split('=')[1]
+        template_position =dst_split[3].split('=')[1]
 
-        to_merge_split = to_merge.split(';')
-        to_merge_name = to_merge_split[0]
-        to_merge_read_position = num(to_merge_split[2].split('=')[1])
-        to_merge_template_position = to_merge_split[3].split('=')[1]
+        for merge in to_merge:
+            merge_split = merge.split(';')
+            merge_name = merge_split[0]
+            merge_read_position = int(merge_split[2].split('=')[1])
+            merge_template_position = merge_split[3].split('=')[1]
 
-        new_length =  dst_len + to_merge_read_position
-        new_template_position = dst_template_position.split(',')[0] + to_merge_template_position.split(',')[1]
+            name = name + '|' + merge_name
+            length = length + merge_read_position
+            template_position = str(min(int(template_position.split(',')[0]), int(merge_template_position.split(',')[0]))) + ',' + \
+                                str(max(int(template_position.split(',')[1]), int(merge_template_position.split(',')[1])))
 
-        new_node_header = dst_name + '|' + to_merge_name + ';' + \
-                          'len=' + str(new_length) + \
-                          'read_position= ' + dst_read_position + \
-                          'template_position= ' + new_template_position
-
+            new_node_header = name + \
+                              ';len=' + str(length) + \
+                              ';read_position=' + str(min(int(read_position), merge_read_position)) + \
+                              ';template_position=' + template_position
 
         # Changing the label (header) in the network
         subgraph = nx.relabel_nodes(subgraph, {dst: new_node_header}, copy = False)
@@ -650,3 +669,204 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         return new_node
     else:
         return dst
+
+def remove_bubble(subgraph, readDatabase, variables):
+    while True:
+        bubble_removed = False
+        # Retrieving nodes (e.g ['1107.2|1611.2|2403.1'])
+        all_nodes = subgraph.nodes()
+        # Starting a set of collapse candidates (unordered list)
+        collapse_candidate = set([])
+
+        # Looping through nodes in all_nodes
+        for node in all_nodes:
+            # In the above it would be '1107.2|1611.2|2403.1'
+            # Should the node not be present, skip the loop
+            if node not in subgraph.nodes():
+                continue
+
+            successors = [s for s in subgraph.successors(node) if subgraph.in_degree(s) == 1 and subgraph.out_degree(s) == 1]
+            # If there are no successors (like in the example above), skip the loop
+            if len(successors) < 2:
+                continue
+            # Dictonary of successors?
+            d = {}
+            print("Removing bubbles!")
+
+            # Looping through the list of successors
+            for successor in successors:
+                # Level 2 successors (successors of the successor)
+                to_node = subgraph.successors(successor)[0] # successor has only one successor
+                # If level 2 successor isn't in a dictionary, it's added
+                if to_node not in d:
+                    d[to_node] = []
+                # Successor is added to a node
+                d[to_node].append(successor)
+
+            # If there are more then one successor coming after a node, we have a bubble!
+            for to_node in [n for n in d if len(d[n]) > 1]:
+                # Merging the bubble
+                new_node = merge_node(d[to_node][1:], d[to_node][0], node, subgraph, 1,variables.TIP_SIZE)
+                # If there is a result of merging, toggler is changed and the loop continues from the top
+                if new_node:
+                    bubble_removed = True
+                    # Adding new node to the collapse candidates list
+                    collapse_candidate.add(new_node)
+
+        subgraph = collapse_graph(subgraph, list(collapse_candidate), readDatabase)
+        # If no bubbles were removed the loop is exited
+        if not bubble_removed:
+            break
+
+    return subgraph
+
+def remove_isolated_node(subgraph, readDatabase, variables):
+    for node in subgraph.nodes():
+        # There are not in and out degrees to the node and the number of reads present is lower then 5
+        # (e.g. there are 3 reads in '1107.2|1611.2|2403.1')
+        # OR if the read length is shorter then 105% of the input read lenth (-l option)
+        if  not subgraph.in_degree(node) and not subgraph.out_degree(node) and \
+            (n_read_in_node(node) < 5 or len(readDatabase[node]) < variables.READ_LEN * 1.05):
+            # Remove the node from the network
+            subgraph.remove_node(node)
+
+    return subgraph
+
+def get_branching_aid(subgraph_orig):
+    # The function used in 'get assemblie' function.
+
+    # The reverse is a graph with the same nodes and edges but with the directions of the edges reversed.
+    subgraph = subgraph_orig.reverse(copy = True)
+    # Dictionary
+    d = {}
+    starting_nodes = []
+
+    # Looping through nodes of the reversed network to make a dictionary of nodes and locate starting nodes
+    for node_str in subgraph.nodes():
+        # Node string '3352.2|838.2|2758.1'
+        d[node_str] = set([node_str])
+        # If there are not in degrees node is a starting node
+        if subgraph.in_degree(node_str) == 0:
+            starting_nodes.append(node_str)
+
+    # BFS
+    # Looping through the starting nodes
+    for starting_node in starting_nodes:
+        # Starting a list of nodes
+        queue = [starting_node]
+        # Looping as long as the queue is not empty
+        while queue != []:
+            # .pop() removes and returns the last item in the list
+            front = queue.pop(0)
+            # Retrieving successors of the node
+            successors = subgraph.successors(front)
+            # Looping through successors
+            for successor in successors:
+                # Adds the starting node to the successor dictionary entry
+                d[successor] = d[successor].union(d[front])
+                if successor not in queue:
+                    # Adds the successor to the queue (will be analysed later)
+                    queue.append(successor)
+    return d
+
+def get_all_path(subgraph, future_nodes, cur_path, paths, variables):
+    last_node = cur_path[-1]
+    successors = subgraph.successors(last_node)
+
+    # ending node, stop recursion.
+    if successors == []:
+        paths.append(cur_path)
+        return paths
+    else:
+        if len(successors) > 1:
+            # Confidence increment is a custom function
+            candidate = sorted([[confidence_increment(cur_path, s, future_nodes[s], variables), s] for s in successors])
+            next_node = candidate[-1][1]
+        else:
+            next_node = successors[0]
+        return get_all_path(subgraph, future_nodes, cur_path + [next_node], paths, variables)
+
+def confidence_increment(visited_path, next_node, future_nodes, variables):
+    # This has something to do with the number of forward and reverse reads present in the same assembly
+
+    # Starting an empty dictionary 'd' and a weighted_num_pair_end variable
+    d, weighted_num_pair_end = {}, 0
+    # Looping through a visited path
+    for idx, node in enumerate(visited_path):
+        # To remain explored
+        for read_id in node.split(";")[0].split('|'):
+            # Read (e.g. 175.1 = read number 175, forward primer)
+            # Read number : number of read e.g. 175
+            # directionality : refers to either forward or reverse (e.g. 1 = forward primer)
+            readNumber, directionality = read_id.split(".")
+            d[readNumber] = len(visited_path) - idx - 1
+
+    for node in future_nodes:
+        for read_id in node.split(';')[0].split("|"):
+            readNumber, directionality  = read_id.split(".")
+            if readNumber in d:
+                weighted_num_pair_end += 1 * (variables.CONFIDENCE_BASE ** d[readNumber])
+
+    return weighted_num_pair_end
+
+
+def get_contig(path, subgraph, readDatabase):
+    # Retrieve contig from the read database
+    contig = readDatabase[path[0]]
+    for idx in range(1, len(path)):
+        prev, cur = path[idx-1], path[idx]
+        seq = readDatabase[cur]
+        overlap = subgraph[prev][cur]["overlap"]
+        contig += seq[overlap:]
+    return contig
+
+def get_start_end_pos(path, contig):
+    # This function is trying to get a position of the read within the template
+    # cm : position within a template
+    min_cm_st = float("inf") # Preselected dummy values for the test.
+    max_cm_ed = 0
+
+    startPosition = []
+    endPosition = []
+    for entry in path:
+        positions = entry.split(';')[3].split('=')[1].split(',')
+        startPosition.append(positions[0])
+        endPosition.append(positions[1])
+
+
+    minStartPosition = min(startPosition)
+    maxEndPosition = max(endPosition)
+
+    #for read_id in [r for r in"|".join(path).split("|") if g.read_position_db[r] >= 0 and (g.read_position_db[r] + g.READ_LEN <= len(contig))]:
+    #    min_cm_st = min(min_cm_st, g.cm_pos[read_id][0])
+    #    max_cm_ed = max(max_cm_ed, g.cm_pos[read_id][1])
+
+    return minStartPosition, maxEndPosition
+
+
+def get_assemblie(subgraph, readDatabase, variables):
+    # Branching aid loops through network, finding tips (starting nodes) and appends nodes that follow them to a dictionary entry
+    future_nodes = get_branching_aid(subgraph)
+    full_genes = []
+    scaffold_candidates = []
+
+    starting_nodes = [n for n in subgraph.nodes() if subgraph.in_degree(n) == 0]
+    for node in starting_nodes:
+        paths = get_all_path(subgraph, future_nodes, [node], [], variables)
+        for path in paths:
+            contig = get_contig(path, subgraph, readDatabase)
+            if len(contig) >= variables.FULL_LENGTH:
+                if variables.NEED_DEFLANK:
+                    #start_pos = min([g.r_pos[r][0] - g.read_position_db[r] for r in path[0].split("|")])
+                    #end_pos = max([len(dat.read_db_original[r]) - g.r_pos[r][1] for r in path[-1].split("|")])
+                    #deflanked_contig = contig[st_pos : len(contig) - ed_pos]
+                    deflanked_contig = 0
+                else:
+                    deflanked_contig = contig
+                full_genes.append([path, deflanked_contig])
+            else:
+                startPosition, endPosition = get_start_end_pos(path=path, contig=contig)
+                if len(contig) > 120:
+                    scaffold_candidates.append([path, startPosition, endPosition, contig])
+
+    return full_genes, scaffold_candidates

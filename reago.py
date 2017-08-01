@@ -169,11 +169,11 @@ scaf, remaining = scaffold(scaffold_candidates)
 full_genes += scaf
 
 print (timestamp(), "Write to Files...")
-write_gene(full_genes)
-write_frag(remaining)
+write_gene(data=full_genes, variables=variables)
+write_frag(data=remaining, variables=variables)
 
 
 print (timestamp(), "Done.")
 print ("- Number of 16S rRNAs:", len(full_genes))
-print ("- Full genes:", g.full_genes_path)
-print ("- Gene fragments:", g.fragments_path)
+print ("- Full genes:", variables.full_genes_path)
+print ("- Gene fragments:", variables.fragments_path)
