@@ -1,35 +1,51 @@
 from celery import Celery
 import numpy as np
 from createRJGraph import create_graph_using_rj
+import networkx as nx
 
 #app = Celery('subgraph', broker = 'amqp://localhost', backend='amqp')
 
 #@app.subgraph
 def subgraph_treatment(subgraph, db, variables):
 
-    nodeList = []
-    for node in subgraph.nodes():
-        nodeList.append(node)
+    # Constructing a read position database, which will be updated when sequences start getting aligned
+    # All read position is saved for each read separately (dereplication is not taken in account)
 
-    nodeSequences = db.hmget('read_sequence', nodeList)
+    nodeSet = set()
+    readPositionDb = {}
+
+    for node in subgraph.nodes():
+        node_name = node.split(';')[0]
+        nodeSet.add(node_name)
+
+    for readName in nodeSet:
+        if '|' in readName:
+            for name in readName.split('|'):
+                readPositionDb[readName] = 0
+        else:
+            readPositionDb[readName] = 0
+
+    nodeSequences = db.hmget('read_sequence', nodeSet)
+
+    # Constructing the readDatabase by assigning sequences so node names and names of singular sequences
+    # Names are coming in binary code from the redis database and therefore need to be recoded to unicode-8
 
     readDatabase = {}
     for node, sequence in zip(nodeList, nodeSequences):
         readDatabase[node] = sequence.decode("UTF-8")
-
-    #filename = "subgaph" + str(num) + ".eps"
-    #draw_graph(subgraph, filename)
-    #num += 1
+        if '|' in node:
+            for seqName in node.split('|'):
+                readDatabase[seqName] = sequence.decode("UTF-8")
 
     full_genes = []
     scaffold_candidates = []
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold
 
-    correct_sequencing_error(subgraph, readDatabase)
+    readDatabase = correct_sequencing_error(subgraph, readDatabase)
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold in a reverse sense
-    correct_sequencing_error_reverse(subgraph, readDatabase)
+    readDatabase = correct_sequencing_error_reverse(subgraph, readDatabase)
 
     # Dictionary of subgaph reads (already happened above)
     #subgraph_read_db = {}
@@ -40,22 +56,24 @@ def subgraph_treatment(subgraph, db, variables):
 
     # Generating a DiGraph with a readjoiner using a file 'graph'.
     subgraph = create_graph_using_rj("subgraph_temp", variables, readDatabase)
-    subgraph = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readDatabase)
+
+    subgraph, readDatabase = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readDatabase)
 
     # Merging bifurcation if there is less then N mistakes
     # I'm taking it out for now. Sounds a bit dodgy
-    subgraph = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readDatabase = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
 
-    subgraph = remove_bubble(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readDatabase = remove_bubble(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
-    subgraph = remove_isolated_node(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readDatabase = remove_isolated_node(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
 
     # Collapsing the subgraph that has been pre-treated by the above set of functions
-    subgraph = collapse_graph(subgraph, [], readDatabase)
+    subgraph, readDatabase = collapse_graph(subgraph, [], readDatabase)
 
     # TODO full_genes and scaffold_candidates must be moved to REDIS
     # Retrieving full genes (genes longer then user defined value) and partial scaffolds
-    full, scaf = get_assemblie(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    full, scaf, readDatabase = get_assemblie(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
     # Saving full genes
     full_genes += full
     # Saving scaffolds
@@ -68,7 +86,7 @@ def correct_sequencing_error(subgraph, readDatabase):
 
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
     if len(subgraph.nodes()) <= 1:
-        return
+        return None, readDatabase
 
 
     alignment_to_starting_node = {}
@@ -174,12 +192,12 @@ def correct_sequencing_error(subgraph, readDatabase):
                 else:
                     print('Houston, we have a problem')
 
-    return
+    return readDatabase
 
 def correct_sequencing_error_reverse(subgraph, readDatabase):
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
     if len(subgraph.nodes()) <= 1:
-        return
+        return readDatabase
 
     # Saving a sub-dicionary with the key value of each starting node
     alignment_to_starting_node = {}
@@ -292,7 +310,7 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
                     multipleSequenceAlighnmentArray[divRowPosition[0][:], divColPosition[0][0]] = base
                 else:
                     print('Houston, we have a problem')
-    return
+    return readDatabase
 
 def collapse_graph(subgraph, candidates, readDatabase):
     # Combining nodes in the networkx produced network
@@ -400,7 +418,7 @@ def collapse_graph(subgraph, candidates, readDatabase):
             if predecessor in nodes_to_combine:
                 nodes_to_combine.remove(predecessor)
 
-    return subgraph
+    return subgraph, readDatabase
 
 def merge_bifurcation(subgraph, readDatabase, variables):
     while True:
@@ -409,11 +427,14 @@ def merge_bifurcation(subgraph, readDatabase, variables):
         # Starting a collapse_candidate as an empty set
         collapse_candidate = set([])
         # Looping over nodes in the network G
-        for node in subgraph.nodes():
+        try:
+            for node in subgraph.nodes():
             # If node isn't in the network G, skip the loop
             # Not sure how this ever happens, but it does. Probably for nodes removed during the cycle.
-            if node not in subgraph.nodes():
-                continue
+                if node not in subgraph.nodes():
+                    continue
+        except:
+            print("Something horrible is happening...")
 
             # Retrieving a set of successors (unordered list). Can be empty.
             # In a network 1-2-3, the successor of 1 is [2], 2 is [3] and 3 is [] - empty list.
@@ -453,7 +474,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
 
 
             # Merging the dst_nodes
-            merged_node = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, readDatabase=readDatabase, variables=variables, direction=1)
+            merged_node, subgraph, readDatabase = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, readDatabase=readDatabase, variables=variables, direction=1)
 
             # If the input isn't empty:
             if merged_node:
@@ -462,7 +483,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 collapse_candidate.add(node)
 
         # Calling a custom collapse function
-        subgraph = collapse_graph(subgraph=subgraph, candidates=list(collapse_candidate), readDatabase=readDatabase)
+        subgraph, readDatabase = collapse_graph(subgraph=subgraph, candidates=list(collapse_candidate), readDatabase=readDatabase)
 
         # fork in
         # Emptying a collapse_candidate set
@@ -503,7 +524,7 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 tip_candidates = tip_candidates.union(dst_candidates)
 
             # Merging the dst_nodes
-            merged_node = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, variables=variables,readDatabase=readDatabase,direction=-1)
+            merged_node, subgraph, readDatabase = merge_node(src_list=tip_candidates, dst=dst_node, shared=node, subgraph=subgraph, variables=variables,readDatabase=readDatabase,direction=-1)
 
             # If the input isn't empty:
             if merged_node:
@@ -512,13 +533,13 @@ def merge_bifurcation(subgraph, readDatabase, variables):
                 collapse_candidate.add(node)
 
         # Calling a custom collapse function
-        subgraph = collapse_graph(subgraph, list(collapse_candidate),readDatabase)
+        subgraph, readDatabase = collapse_graph(subgraph, list(collapse_candidate),readDatabase)
 
         if merged == False:
             break
 
-    subgraph = collapse_graph(subgraph, [],readDatabase)
-    return subgraph
+    subgraph, readDatabase = collapse_graph(subgraph, [],readDatabase)
+    return subgraph, readDatabase
 
 def n_read_in_node(node):
     # Retreaving the number of reads in a given node
@@ -538,7 +559,10 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     # Number of allowed mismatches.
     # TODO : Hardcoded mismatches
     # This basically means 0, since the number mistakes must be higher, not higher or equal
-    N_MIS = 1
+    N_MIS = 3
+
+    # Database of read names that have been changed
+    oldReadNames = {}
 
     ###########################################################
     # Assumingly this part merges a predecessor
@@ -553,6 +577,7 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     dst_remaining  = dst_seq[dst_overlap: ]              if direction == 1 else dst_seq[ :-dst_overlap][::-1]
 
     new_sequence = readDatabase[shared] + dst_remaining
+
     if len(new_sequence) != len(readDatabase[shared]) + len(dst_seq) - dst_overlap:
         print("Wrong sequence length")
         quit()
@@ -567,13 +592,18 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
     ###########################################################
 
     for src in src_list:
+
+        #if src in oldReadNames:
+        #    print("{} have allready been dealt with.".format(src))
+        #    continue
+
         # Retrieving sequences of each of the listed nodes
         try:
             src_seq  = readDatabase[src]
         except:
             print("Current src: {}".format(src))
             print("This tip has already been dealt with.")
-            return None
+            return None, subgraph, readDatabase
 
         # Determining the overlap (integer) of the node with the node to be merged with
         src_overlap = subgraph[shared][src]['overlap']          if direction == 1 else subgraph[src][shared]['overlap']
@@ -596,7 +626,11 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
             seqOver.append(src_remaining[i])
             if src_remaining[i] != dst_remaining[i]:
                 mis += 1
+                print('mis {}'.format(mis))
                 # If the number of mismatches is larger then defined above, break from the loop
+
+                if mis > 1:
+                    print("Mismatches!")
                 if mis > N_MIS:
                     break
         # TODO : This needs a revision. I really don't see the point of TIP_SIZE or why should this be relevant when there are many mismatches
@@ -610,9 +644,23 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         # Offset of the sequence to overlap
         offset = dst_overlap - src_overlap if direction == 1 else ((len(dst_seq) - dst_overlap) - (len(src_seq) - src_overlap))
 
+        if offset < -1000:
+            print("Offset too high!!")
+
         # Adding the offset to the read position (of each read separately?)
         new_read_position = str(int(src.split(';')[2].split('=')[1]) + offset)
         new_read = src.split(';')[0] + ';' + src.split(';')[1] + ';' + 'read_position=' + new_read_position + ';' + src.split(';')[3]
+
+        oldReadNames[new_read] = src
+
+        ##################################################
+        # Relabelling a node in the subgraph network
+        ##################################################
+        mapping = {oldReadNames[new_read]: new_read}
+        subgraph = nx.relabel_nodes(subgraph, mapping)
+
+        if len(oldReadNames) > 1:
+            print("oldReadNames dictionary length:{}".format(len(oldReadNames)))
 
         # Saving the new read header with the old sequence
         readDatabase[new_read] = readDatabase.pop(src) + src_remaining
@@ -622,7 +670,7 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
 
     # Should there be nothing to remove or merge and finish the function
     if not to_remove + to_merge:
-        return None
+        return None, subgraph, readDatabase
 
     # Looping throught the list of nodes to remove
     for n in to_remove:
@@ -664,11 +712,14 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         # Looping through the list of nodes to merge
         for n in to_merge:
             # Removing a node from the network
-            subgraph.remove_node(n)
+            try:
+                subgraph.remove_node(oldReadNames[n])
+            except:
+                print("The node %s is not in the digraph."%(n,))
 
-        return new_node
+        return new_node_header, subgraph, readDatabase
     else:
-        return dst
+        return dst, subgraph, readDatabase
 
 def remove_bubble(subgraph, readDatabase, variables):
     while True:
@@ -706,19 +757,19 @@ def remove_bubble(subgraph, readDatabase, variables):
             # If there are more then one successor coming after a node, we have a bubble!
             for to_node in [n for n in d if len(d[n]) > 1]:
                 # Merging the bubble
-                new_node = merge_node(d[to_node][1:], d[to_node][0], node, subgraph, 1,variables.TIP_SIZE)
+                new_node, subgraph, readDatabase = merge_node(src_list=d[to_node][1:], dst=d[to_node][0], shared=node, subgraph=subgraph, readDatabase=readDatabase, variables=variables, direction=1)
                 # If there is a result of merging, toggler is changed and the loop continues from the top
                 if new_node:
                     bubble_removed = True
                     # Adding new node to the collapse candidates list
                     collapse_candidate.add(new_node)
 
-        subgraph = collapse_graph(subgraph, list(collapse_candidate), readDatabase)
+        subgraph, readDatabase = collapse_graph(subgraph, list(collapse_candidate), readDatabase)
         # If no bubbles were removed the loop is exited
         if not bubble_removed:
             break
 
-    return subgraph
+    return subgraph, readDatabase
 
 def remove_isolated_node(subgraph, readDatabase, variables):
     for node in subgraph.nodes():
@@ -730,7 +781,7 @@ def remove_isolated_node(subgraph, readDatabase, variables):
             # Remove the node from the network
             subgraph.remove_node(node)
 
-    return subgraph
+    return subgraph, readDatabase
 
 def get_branching_aid(subgraph_orig):
     # The function used in 'get assemblie' function.
@@ -812,7 +863,15 @@ def confidence_increment(visited_path, next_node, future_nodes, variables):
 
 def get_contig(path, subgraph, readDatabase):
     # Retrieve contig from the read database
-    contig = readDatabase[path[0]]
+    try:
+        contig = readDatabase[path[0]]
+    except:
+        print("Something is afoot.")
+
+        ####################################################
+        # It seems that the "path" is a non-updated version of the headers. Doesn't contain a correct position value.
+        ####################################################
+
     for idx in range(1, len(path)):
         prev, cur = path[idx-1], path[idx]
         seq = readDatabase[cur]
@@ -869,4 +928,4 @@ def get_assemblie(subgraph, readDatabase, variables):
                 if len(contig) > 120:
                     scaffold_candidates.append([path, startPosition, endPosition, contig])
 
-    return full_genes, scaffold_candidates
+    return full_genes, scaffold_candidates, readDatabase

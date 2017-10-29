@@ -1,8 +1,8 @@
 import time
-import networkx as nx
 #import pygraphviz as pgv
 import argparse
 from argparse import RawTextHelpFormatter
+import networkx as nx
 
 from reagoFunctions import *
 from parseInput import parseInput
@@ -160,7 +160,6 @@ for subgraph in subgraphs:
     #p = multiprocessing.Process(target=worker)
     #jobs.append(p)
     #p.start()
-
 
 print('It took', time.time()-start, 'second to run through subgraphs.')
 

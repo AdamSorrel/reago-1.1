@@ -17,7 +17,7 @@ def database_init(variables, db):
             # For every header
             if line[0] == ">":
                 # read id, template start, template end, query start, query end
-                read_id, template_position_start, template_position_end, sequence_start, sequence_end = line[1:].split()
+                read_name, template_position_start, template_position_end, sequence_start, sequence_end = line[1:].split()
                 # query database start and end
                 #read_position = [int(sequence_start), int(sequence_end)]
                 # Beginning and end position within the template
@@ -28,9 +28,26 @@ def database_init(variables, db):
                 # Sequence is saved (without the last character) in the read dictionary (r)
                 read_sequence = line[:-1]
 
-                read_id = read_id + ';len=' + str(len(read_sequence)) + ';read_position=' + str(0) + ';template_position=' + template_position
+                read_id = read_name + ';len=' + str(len(read_sequence)) + ';read_position=' + str(0) + ';template_position=' + template_position
 
                 pipe.hset('read_sequence', read_id, read_sequence)
+
+                #####################################################
+                # TODO check if it works (read_position database with zeros)
+                #####################################################
+
+                to_add_to_db = []
+
+                if '|' in read_name:
+                    for single_read in read.split('|'):
+                        to_add_to_db.append(single_read)
+
+                else:
+                    to_add_to_db.append(read_name)
+
+                for single_read in to_add_to_db:
+                    pipe.hset('read_position', single_read, '0')
+
                 #pipe.hset('read_position', read_id, 0)
                 #pipe.hset('template_position', read_id, template_position)
 

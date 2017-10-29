@@ -57,6 +57,8 @@ def create_graph_using_rj(graphName, variables, db):
         except:
             # File is unruly and some odd character was appended to the end. Removing the unruly character and proceeding
             print('Issue raised with {}'.format(fSetDes))
+            import pdb; pdb.set_trace()
+
             os.system('head -n -1' + fSetDes.name + '>' + fSetDes.name)
             for line in fSetDes:
                 read_map[str(cnt)] = line[:-1]
