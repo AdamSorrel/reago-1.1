@@ -8,44 +8,43 @@ import networkx as nx
 #@app.subgraph
 def subgraph_treatment(subgraph, db, variables):
 
-    # Constructing a read position database, which will be updated when sequences start getting aligned
-    # All read position is saved for each read separately (dereplication is not taken in account)
+    # First the sequences belonging to a subgraph are retrieved from the redis database server
 
-    nodeSet = set()
+    nodeSequences = db.hmget('read_sequence', subgraph.nodes())
+
+    # A read position database needs to be constructed. readDatabase contains all reads and sequences separately and
+    # will be eventually updated when some sequences start getting aligned. readPositionDb contains information about
+    # the position of each read within the alignment/scaffold.Read positions are saved for each read separately
+    # (dereplication is not taken in account)
+
+    # Names and sequences are coming in binary from the redis database and are recoded to unicode-8.
+
+    readSequenceDb = {}
     readPositionDb = {}
 
-    for node in subgraph.nodes():
-        node_name = node.split(';')[0]
-        nodeSet.add(node_name)
+    for node, sequence in zip(subgraph.nodes(), nodeSequences):
+        node = node.split(';')[0]
+        readSequenceDb[node] = sequence.decode("UTF-8")
+        readPositionDb[node] = 0
 
-    for readName in nodeSet:
-        if '|' in readName:
-            for name in readName.split('|'):
-                readPositionDb[readName] = 0
-        else:
-            readPositionDb[readName] = 0
-
-    nodeSequences = db.hmget('read_sequence', nodeSet)
-
-    # Constructing the readDatabase by assigning sequences so node names and names of singular sequences
-    # Names are coming in binary code from the redis database and therefore need to be recoded to unicode-8
-
-    readDatabase = {}
-    for node, sequence in zip(nodeList, nodeSequences):
-        readDatabase[node] = sequence.decode("UTF-8")
-        if '|' in node:
-            for seqName in node.split('|'):
-                readDatabase[seqName] = sequence.decode("UTF-8")
+        # This is if they need to be un-dereplicated.
+        #if '|' in node:
+        #    for seqName in node.split('|'):
+        #        readSequenceDb[seqName] = sequence.decode("UTF-8")
+        #        readPositionDb[seqName] = 0
+        #else:
+        #    readSequenceDb[node] = sequence.decode("UTF-8")
+        #    readPositionDb[node] = 0
 
     full_genes = []
     scaffold_candidates = []
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold
 
-    readDatabase = correct_sequencing_error(subgraph, readDatabase)
+    readSequenceDb = correct_sequencing_error(subgraph, readSequenceDb)
 
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold in a reverse sense
-    readDatabase = correct_sequencing_error_reverse(subgraph, readDatabase)
+    readSequenceDb = correct_sequencing_error_reverse(subgraph, readSequenceDb)
 
     # Dictionary of subgaph reads (already happened above)
     #subgraph_read_db = {}
@@ -55,25 +54,25 @@ def subgraph_treatment(subgraph, db, variables):
     #     subgraph_read_db[node] = readDatabase[node]
 
     # Generating a DiGraph with a readjoiner using a file 'graph'.
-    subgraph = create_graph_using_rj("subgraph_temp", variables, readDatabase)
+    subgraph = create_graph_using_rj("subgraph_temp", variables, readSequenceDb)
 
-    subgraph, readDatabase = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readDatabase)
+    subgraph, readSequenceDb = collapse_graph(subgraph=subgraph, candidates=[], readDatabase=readSequenceDb)
 
     # Merging bifurcation if there is less then N mistakes
     # I'm taking it out for now. Sounds a bit dodgy
-    subgraph, readDatabase = merge_bifurcation(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readSequenceDb = merge_bifurcation(subgraph=subgraph, readDatabase=readSequenceDb, variables=variables)
 
-    subgraph, readDatabase = remove_bubble(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readSequenceDb = remove_bubble(subgraph=subgraph, readDatabase=readSequenceDb, variables=variables)
 
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
-    subgraph, readDatabase = remove_isolated_node(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    subgraph, readSequenceDb = remove_isolated_node(subgraph=subgraph, readDatabase=readSequenceDb, variables=variables)
 
     # Collapsing the subgraph that has been pre-treated by the above set of functions
-    subgraph, readDatabase = collapse_graph(subgraph, [], readDatabase)
+    subgraph, readSequenceDb = collapse_graph(subgraph, [], readSequenceDb)
 
     # TODO full_genes and scaffold_candidates must be moved to REDIS
     # Retrieving full genes (genes longer then user defined value) and partial scaffolds
-    full, scaf, readDatabase = get_assemblie(subgraph=subgraph, readDatabase=readDatabase, variables=variables)
+    full, scaf, readSequenceDb = get_assemblie(subgraph=subgraph, readDatabase=readSequenceDb, variables=variables)
     # Saving full genes
     full_genes += full
     # Saving scaffolds
@@ -81,74 +80,89 @@ def subgraph_treatment(subgraph, db, variables):
 
     return full_genes,scaffold_candidates
 
-def correct_sequencing_error(subgraph, readDatabase):
-    # This sequence takes the subgraph from networkx function and a variable 'ratio'
+def correct_sequencing_error(subgraph, readSequenceDb):
 
-    # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
+    # Takes sequences from each subgraph sequence set and compares the overlaps. Should it discover a differing base in
+    # the overlap, it will attempt to correct it. It should be noted that this might be undesirable for the user
+    # as it would effectively erase some differences between the population members. The performance and application of
+    # this procedure remains to be determined.
+
+    # subraph.nodes returns a list of nodes of the network. Should there be only one node the method quits.
     if len(subgraph.nodes()) <= 1:
-        return None, readDatabase
+        return None, readSequenceDb
 
+    # A starting node needs to be determined. This is a node that has no predecessors and is therefore effectively
+    #  a 'beginning' of the graph.
 
     alignment_to_starting_node = {}
-    # List of starting nodes
     starting_nodes = []
 
-    # Set is an unordered collection of items where every element is unique
+    # Reminder: Set is an unordered collection of items where every element is unique
     visited = set([])
+
     # Looping over nodes and determining their predecessors, if there are none, the node is declared a 'starting node'
     for node_str in subgraph.nodes():
         if len(subgraph.predecessors(node_str)) == 0:
             starting_nodes.append(node_str) # every node represents a read
 
-    # Looping over starting nodes
+    # After all starting nodes have been gathered, each one of them is treated separately. The method reconstructs
+    # an alignment based on supplied overlap values and then explores the overlapping regions.
+
     for starting_node in starting_nodes:
-        # Saving a sub-dicionary with the key value of each starting node is a dictionary of dictionaries
+
+        # Saving a sub-dicionary with the key value of each starting node. These are essentially all the root tips of
+        # the subgraph if it were a tree.
         alignment_to_starting_node[starting_node] = {}
-        # Setting a value of the starting_node dictionary
-        # TODO : I'm really not sure why there is an embedded with twice the same key dictionary here.
+
+        # Setting a nested dictionary starting with each root tip.
         alignment_to_starting_node[starting_node][starting_node], max_start_position = 0, 0
 
-        # Queue starting with the starting node
+        # Queue starting with the root tip of subgraph.
         queue = [starting_node] # BFS
 
-        # Looping until the queue is empty
-        # This loop effectively crawls through the network starting with a starting node and crawling through successors
+        # Looping through the queue until its empty. This effectively crawls through the network starting with a
+        # the root tip and crawling through the successor all the way to the top branches.
         while queue != []:
             # Returns and removes an item from a defined position (first item in the list in this case)
             current = queue.pop(0)
 
-            # Visited is defined above the loop over starting nodes
-            # If starting nodes have been visited, the whole loop is skipped
+            # Visited: a set of already visited nodes, shared by the entire run though the subgraph. If the starting
+            # node was already visited, it is skipped.
             if current in visited:
                 continue
             else:   # Starting nodes that have not been visited are added to the 'visited' list
                 visited.add(current)
 
-            # Retreaves the list of successors
+            # The node list of successors is saved in the variable. These are the mates that are one level higher in
+            #  the tree. The successors are added to the queue.
             successors = subgraph.successors(current)
-            # Successors are added to the queque
             queue += successors
 
-            # For each element in the list of successors:
+            # For each element in the list of successors, the overlap value with the predecessor node is retrieved
+            # as well as the read length. The alignment is saved as a new entry in the previously mentioned nested
+            # dictionary under its parent root node. The position is calculated as as an addition of
+            # overhang (read length - overlap) to the previous node in the dictionary.
             for successor in successors:
                 # This retrieves the overlap value of the successor from the G network
                 overlap = subgraph[current][successor]['overlap']
-                # Getting a current read length
-                readLength = successor.split(';')[1].split('=')[1]
                 # This determines the position of the aligned read relative to the beginning of the starting node
                 alignment_to_starting_node[starting_node][successor] \
-                        = alignment_to_starting_node[starting_node][current] + int(readLength) - overlap
+                        = alignment_to_starting_node[starting_node][current] + (len(readSequenceDb[successor.split(';')[0]]) - overlap)
+
                 # Maximum starting position (probably which read is furthers away of the starting node)
                 max_start_position = max(max_start_position, alignment_to_starting_node[starting_node][successor])
 
-        # Looping over all successors from a particular starting node
+
+        # After the read positions have been established, the method once again loops through the acquired dictionary
+        # and constructs a multiple sequence alignment. An example can be found in the 'subgraph.txt' file.
         multipleSequenceAlighnment = []
         for successor in alignment_to_starting_node[starting_node]:
             # Reads are possitionned absolutely adding empty lines before them
-            multipleSequenceAlighnment.append([" " * alignment_to_starting_node[starting_node][successor] + readDatabase[successor], successor])
+            multipleSequenceAlighnment.append([" " * alignment_to_starting_node[starting_node][successor] + readSequenceDb[successor.split(';')[0]], successor])
             # MSA would be actually interesting to print out at some point
 
-        # Determining the max length of sequences in the alignment
+        # Determining the end of the sequence alignment (maxLength) and the count of sequences in the alignment inclusing
+        # dereplicated sequences in order to construct an alignment numpy array object.
         maxLength = 0
         seqCount = 0
         for sequence, name in multipleSequenceAlighnment:
@@ -158,6 +172,10 @@ def correct_sequencing_error(subgraph, readDatabase):
                 maxLength = length
 
         multipleSequenceAlighnmentArray = np.empty((seqCount, maxLength), dtype='<U1')
+
+        # A numpy array is constructed based on the data from the data gathered in the last few steps. The number of
+        # columns corresponds to maxLength and the number of rows to seqCounts. The sequences are un-dereplicated upon
+        # addition to the array since the errors are determined based on sequence occurrence counts.
 
         position = 0
         for sequence, name in multipleSequenceAlighnment:
@@ -174,13 +192,23 @@ def correct_sequencing_error(subgraph, readDatabase):
         # Exchanging empty space positions for true empty values (this is to count non-zero value in each column later
         multipleSequenceAlighnmentArray[multipleSequenceAlighnmentArray == ' ',] = ''
 
-        # Gathering alignment statistics
+        # Alignment statistics are processed for each column of the array.
+
+        # The amount of aligned sequences is determined for each column of the array. It is expected that the beginning
+        # and the end of the alignment will have 'lower coverage' much like it is described by the broken stick model.
         nonZero = np.count_nonzero(multipleSequenceAlighnmentArray, axis=0)
 
         for base in ['A', 'T', 'G', 'C']:
             baseCount = sum(multipleSequenceAlighnmentArray == base)
             divergentBaseCol = multipleSequenceAlighnmentArray[:,(baseCount != nonZero) & (baseCount != 0),]
+            for column in divergentBaseCol.T:
+                divergentColumnPosition = np.where((multipleSequenceAlighnmentArray == column).all(axis=0))
+                multipleSequenceAlighnmentArray[:, divergentColumnPosition[0][0]] = base
+
+                #######################################################################
+                #######################################################################
             if divergentBaseCol.size != 0:
+                # Determining the number of divergent bases
                 nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
                 if nDivergentBases[0] == 1:
                     print('Replacing a divergent base')
@@ -192,7 +220,7 @@ def correct_sequencing_error(subgraph, readDatabase):
                 else:
                     print('Houston, we have a problem')
 
-    return readDatabase
+    return readSequenceDb
 
 def correct_sequencing_error_reverse(subgraph, readDatabase):
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
