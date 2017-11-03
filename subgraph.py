@@ -196,29 +196,46 @@ def correct_sequencing_error(subgraph, readSequenceDb):
 
         # The amount of aligned sequences is determined for each column of the array. It is expected that the beginning
         # and the end of the alignment will have 'lower coverage' much like it is described by the broken stick model.
-        nonZero = np.count_nonzero(multipleSequenceAlighnmentArray, axis=0)
+        # Divergent bases are identified as present in columns that contain a given base (A,T,G or C), but the sum of
+        # this base does not equal sum of total bases in that colum as determined by the array "totalBasesPerColumn".
+        totalBasesPerColumn = np.count_nonzero(multipleSequenceAlighnmentArray, axis=0)
 
         for base in ['A', 'T', 'G', 'C']:
             baseCount = sum(multipleSequenceAlighnmentArray == base)
-            divergentBaseCol = multipleSequenceAlighnmentArray[:,(baseCount != nonZero) & (baseCount != 0),]
-            for column in divergentBaseCol.T:
-                divergentColumnPosition = np.where((multipleSequenceAlighnmentArray == column).all(axis=0))
-                multipleSequenceAlighnmentArray[:, divergentColumnPosition[0][0]] = base
+            divergentBaseColPosition = (baseCount != totalBasesPerColumn) & (baseCount != 0)
+            if sum(divergentBaseColPosition) > 0:
 
-                #######################################################################
-                #######################################################################
-            if divergentBaseCol.size != 0:
-                # Determining the number of divergent bases
-                nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
-                if nDivergentBases[0] == 1:
-                    print('Replacing a divergent base')
-                    divColsBoolean = (baseCount != nonZero) & (baseCount != 0)
-                    divColPosition = np.where(divColsBoolean)
-                    divRowBoolean = (divergentBaseCol != base) & (divergentBaseCol != '')
-                    divRowPosition = np.where(divRowBoolean)
-                    multipleSequenceAlighnmentArray[divRowPosition[0][:],divColPosition[0][0]] = base
-                else:
-                    print('Houston, we have a problem')
+                for position in np.where(divergentBaseColPosition == True)[0]:  # Looping through all positions that are divergent
+                    basesDict = {'A': 0, 'T': 0, 'G': 0, 'C': 0}
+                    column = multipleSequenceAlighnmentArray[:,position]
+
+                    for base in basesDict:          # Testing each base in the dictionary
+                        count = sum(column == base) # Base count in the given column
+                        basesDict[base] = count     # Saving a base count to the base key
+
+                    sortedBases = sorted(basesDict.items(), key=lambda kv: kv[1], reverse=True)
+
+                    if sortedBases[1][1]/sortedBases[0][1] < USERTHRESHOLD!!!
+                        ###############################
+                        # Do something
+                        ###############################
+
+
+
+                    #     return mostfrequent, oldcounts
+            #
+            # if divergentBaseCol.size != 0:
+            #     # Determining the number of divergent bases
+            #     nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
+            #     if nDivergentBases[0] == 1:
+            #         print('Replacing a divergent base')
+            #         divColsBoolean = (baseCount != totalBasesPerColumn) & (baseCount != 0)
+            #         divColPosition = np.where(divColsBoolean)
+            #         divRowBoolean = (divergentBaseCol != base) & (divergentBaseCol != '')
+            #         divRowPosition = np.where(divRowBoolean)
+            #         multipleSequenceAlighnmentArray[divRowPosition[0][:],divColPosition[0][0]] = base
+            #     else:
+            #         print('Houston, we have a problem')
 
     return readSequenceDb
 
