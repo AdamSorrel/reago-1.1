@@ -203,11 +203,12 @@ def correct_sequencing_error(subgraph, readSequenceDb):
         for base in ['A', 'T', 'G', 'C']:
             baseCount = sum(multipleSequenceAlighnmentArray == base)
             divergentBaseColPosition = (baseCount != totalBasesPerColumn) & (baseCount != 0)
-            if sum(divergentBaseColPosition) > 0:
 
-                for position in np.where(divergentBaseColPosition == True)[0]:  # Looping through all positions that are divergent
+            if sum(divergentBaseColPosition) > 0:  # If there are some columns retrieved
+
+                for columnPosition in np.where(divergentBaseColPosition == True)[0]:  # Looping through all columns that are divergent
                     basesDict = {'A': 0, 'T': 0, 'G': 0, 'C': 0}
-                    column = multipleSequenceAlighnmentArray[:,position]
+                    column = multipleSequenceAlighnmentArray[:,columnPosition]
 
                     for base in basesDict:          # Testing each base in the dictionary
                         count = sum(column == base) # Base count in the given column
@@ -215,34 +216,25 @@ def correct_sequencing_error(subgraph, readSequenceDb):
 
                     sortedBases = sorted(basesDict.items(), key=lambda kv: kv[1], reverse=True)
 
-                    if sortedBases[1][1]/sortedBases[0][1] < USERTHRESHOLD!!!
+                    if sortedBases[1][1]/sum(basesDict.values()) < 0.1: # #### USER DEFINED treshold!!
+                        # All places that are NOT the most abundant base (position 0 in sorted list) and at the same time
+                        # are not empty spaces are going to be replaced by the most abundant base.
+                        multipleSequenceAlighnmentArray[(multipleSequenceAlighnmentArray[:, columnPosition] != sortedBases[0][0]) & (
+                        multipleSequenceAlighnmentArray[:, columnPosition] != ''),columnPosition] = sortedBases[0][0]
+                    else:
+                        print("Too high a proportion of rare value!")
+
                         ###############################
                         # Do something
                         ###############################
 
 
-
-                    #     return mostfrequent, oldcounts
-            #
-            # if divergentBaseCol.size != 0:
-            #     # Determining the number of divergent bases
-            #     nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
-            #     if nDivergentBases[0] == 1:
-            #         print('Replacing a divergent base')
-            #         divColsBoolean = (baseCount != totalBasesPerColumn) & (baseCount != 0)
-            #         divColPosition = np.where(divColsBoolean)
-            #         divRowBoolean = (divergentBaseCol != base) & (divergentBaseCol != '')
-            #         divRowPosition = np.where(divRowBoolean)
-            #         multipleSequenceAlighnmentArray[divRowPosition[0][:],divColPosition[0][0]] = base
-            #     else:
-            #         print('Houston, we have a problem')
-
     return readSequenceDb
 
-def correct_sequencing_error_reverse(subgraph, readDatabase):
+def correct_sequencing_error_reverse(subgraph, readSequenceDb):
     # G.nodes  returns a list of nodes of the network. Should there be only one node, quitting.
     if len(subgraph.nodes()) <= 1:
-        return readDatabase
+        return None, readSequenceDb
 
     # Saving a sub-dicionary with the key value of each starting node
     alignment_to_starting_node = {}
@@ -263,7 +255,7 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
     for starting_node in starting_nodes:
         # Saving a sub-dicionary with the key value of each starting node
         alignment_to_starting_node[starting_node] = {}
-        alignment_to_starting_node[starting_node][starting_node], min_st_pos = 0, 0
+        alignment_to_starting_node[starting_node][starting_node], min_start_position = 0, 0
 
         # Queue starting with the starting node
         queue = [starting_node] # BFS
@@ -290,20 +282,23 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
                 # This retrieves the overlap value of the successor from the G network
                 overlap = subgraph[predecessor][current]['overlap']
                 # Getting a current read length
-                readLength = predecessor.split(';')[1].split('=')[1]
+
+
+                #readLength = predecessor.split(';')[1].split('=')[1]
+
                 # This probably determines the position of the aligned read
                 alignment_to_starting_node[starting_node][predecessor] = \
-                        alignment_to_starting_node[starting_node][current] - (int(readLength) - overlap)
+                        alignment_to_starting_node[starting_node][current] - (len(readSequenceDb[predecessor.split(';')[0]]) - overlap)
                 # Minimum starting position (probably which read is furthers away of the end node)
-                min_st_pos = min(min_st_pos, alignment_to_starting_node[starting_node][predecessor])
+                min_start_position = min(min_start_position, alignment_to_starting_node[starting_node][predecessor])
 
         # Looping over all successors from a particular starting node subracting min start position
         for predecessor in alignment_to_starting_node[starting_node]:
-            alignment_to_starting_node[starting_node][predecessor] -= min_st_pos
+            alignment_to_starting_node[starting_node][predecessor] -= min_start_position
 
         multipleSequenceAlighnment = []
         for predecessor in alignment_to_starting_node[starting_node]:
-            multipleSequenceAlighnment.append([" " * alignment_to_starting_node[starting_node][predecessor] + readDatabase[predecessor], predecessor])
+            multipleSequenceAlighnment.append([" " * alignment_to_starting_node[starting_node][predecessor] + readSequenceDb[predecessor.split(';')[0]], predecessor])
 
         # Determining the max length of sequences in the alignment
         maxLength = 0
@@ -334,7 +329,7 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
         # Gathering alignment statistics
         # statArray = np.empty((5,multipleSequenceAlighnmentArray.shape[1]), dtype=np.int8)
 
-        nonZero = np.count_nonzero(multipleSequenceAlighnmentArray, axis=0)
+        totalBasesPerColumn = np.count_nonzero(multipleSequenceAlighnmentArray, axis=0)
         # Occurences of adenine in each column
         # adenine= sum(multipleSequenceAlighnmentArray == "A")
         # Occurrences should either be equal to number of non-zero elements or be 0 themselves, if not there is a divergent base
@@ -343,19 +338,46 @@ def correct_sequencing_error_reverse(subgraph, readDatabase):
 
         for base in ['A', 'T', 'G', 'C']:
             baseCount = sum(multipleSequenceAlighnmentArray == base)
-            divergentBaseCol = multipleSequenceAlighnmentArray[:, (baseCount != nonZero) & (baseCount != 0), ]
-            if divergentBaseCol.size != 0:
-                nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
-                if nDivergentBases[0] == 1:
-                    print('Replacing a divergent base')
-                    divColsBoolean = (baseCount != nonZero) & (baseCount != 0)
-                    divColPosition = np.where(divColsBoolean)
-                    divRowBoolean = (divergentBaseCol != base) & (divergentBaseCol != '')
-                    divRowPosition = np.where(divRowBoolean)
-                    multipleSequenceAlighnmentArray[divRowPosition[0][:], divColPosition[0][0]] = base
-                else:
-                    print('Houston, we have a problem')
-    return readDatabase
+            divergentBaseColPosition =  (baseCount != totalBasesPerColumn) & (baseCount != 0)
+
+            if sum(divergentBaseColPosition) > 0:   # If there are some columns retrieved
+
+                for columnPosition in np.where(divergentBaseColPosition == True)[0]:  # Looping through all columns that are divergent
+                    basesDict = {'A': 0, 'T': 0, 'G': 0, 'C': 0}
+                    column = multipleSequenceAlighnmentArray[:,columnPosition]
+
+                    for base in basesDict:          # Testing each base in the dictionary
+                        count = sum(column == base) # Base count in the given column
+                        basesDict[base] = count     # Saving a base count to the base key
+
+                    sortedBases = sorted(basesDict.items(), key=lambda kv: kv[1], reverse=True)
+
+                    if sortedBases[1][1]/sum(basesDict.values()) < 0.1: # #### USER DEFINED treshold!!
+                        # All places that are NOT the most abundant base (position 0 in sorted list) and at the same time
+                        # are not empty spaces are going to be replaced by the most abundant base.
+                        multipleSequenceAlighnmentArray[(multipleSequenceAlighnmentArray[:, columnPosition] != sortedBases[0][0]) & (
+                        multipleSequenceAlighnmentArray[:, columnPosition] != ''),columnPosition] = sortedBases[0][0]
+                    else:
+                        print("Too high a proportion of rare value!")
+
+                        ###############################
+                        # Do something
+                        ###############################
+
+
+
+            # if divergentBaseCol.size != 0:
+            #     nDivergentBases = sum((divergentBaseCol != base) & (divergentBaseCol != ''))
+            #     if nDivergentBases[0] == 1:
+            #         print('Replacing a divergent base')
+            #         divColsBoolean = (baseCount != nonZero) & (baseCount != 0)
+            #         divColPosition = np.where(divColsBoolean)
+            #         divRowBoolean = (divergentBaseCol != base) & (divergentBaseCol != '')
+            #         divRowPosition = np.where(divRowBoolean)
+            #         multipleSequenceAlighnmentArray[divRowPosition[0][:], divColPosition[0][0]] = base
+            #     else:
+            #         print('Houston, we have a problem')
+    return readSequenceDb
 
 def collapse_graph(subgraph, candidates, readDatabase):
     # Combining nodes in the networkx produced network
