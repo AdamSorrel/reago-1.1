@@ -517,14 +517,14 @@ def collapse_graph(subgraph, candidates, readSequenceDb, readPositionDb, purge_o
 
     return subgraph, readSequenceDb
 
-def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, direction):
+def merge_node(src_list, dst, shared, subgraph, readSequenceDb, variables, direction):
     # src_list (e.g. tip_candidates)
     # src_list, dst and shared look like this: '1581.2|3294.2;...'
     # shared : node to merge with
 
     # Number of allowed mismatches.
     # TODO : Hardcoded mismatches
-    # This basically means 0, since the number mistakes must be higher, not higher or equal
+
     N_MIS = 3
 
     # Database of read names that have been changed
@@ -536,15 +536,15 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
 
     # dst is a header of merged sequences (e.g. '2579.2|2295.1|1042.1')
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
-    dst_seq  = readDatabase[dst]
+    dst_seq  = readSequenceDb[dst]
     # retrieving overlap of the 'new' node with the node to merge with (shared)
     dst_overlap = subgraph[shared][dst]['overlap']              if direction == 1 else subgraph[dst][shared]["overlap"]
     # Sequence that's overhanging from the node to be merged with
     dst_remaining  = dst_seq[dst_overlap: ]              if direction == 1 else dst_seq[ :-dst_overlap][::-1]
 
-    new_sequence = readDatabase[shared] + dst_remaining
+    new_sequence = readSequenceDb[shared] + dst_remaining
 
-    if len(new_sequence) != len(readDatabase[shared]) + len(dst_seq) - dst_overlap:
+    if len(new_sequence) != len(readSequenceDb[shared]) + len(dst_seq) - dst_overlap:
         print("Wrong sequence length")
         quit()
 
@@ -565,11 +565,11 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
 
         # Retrieving sequences of each of the listed nodes
         try:
-            src_seq  = readDatabase[src]
+            src_seq  = readSequenceDb[src]
         except:
             print("Current src: {}".format(src))
             print("This tip has already been dealt with.")
-            return None, subgraph, readDatabase
+            return None, subgraph, readSequenceDb
 
         # Determining the overlap (integer) of the node with the node to be merged with
         src_overlap = subgraph[shared][src]['overlap']          if direction == 1 else subgraph[src][shared]['overlap']
@@ -629,14 +629,14 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
             print("oldReadNames dictionary length:{}".format(len(oldReadNames)))
 
         # Saving the new read header with the old sequence
-        readDatabase[new_read] = readDatabase.pop(src) + src_remaining
+        readSequenceDb[new_read] = readSequenceDb.pop(src) + src_remaining
 
         # Appending the new sequence to the list to merge
         to_merge.append(new_read)
 
     # Should there be nothing to remove or merge and finish the function
     if not to_remove + to_merge:
-        return None, subgraph, readDatabase
+        return None, subgraph, readSequenceDb
 
     # Looping throught the list of nodes to remove
     for n in to_remove:
@@ -673,7 +673,7 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
         subgraph = nx.relabel_nodes(subgraph, {dst: new_node_header}, copy = False)
 
         # Adding the new node in the final database (THAT HAS ALREADY BEEN DONE!)
-        readDatabase[new_node_header] = readDatabase.pop(dst)
+        readSequenceDb[new_node_header] = readSequenceDb.pop(dst)
 
         # Looping through the list of nodes to merge
         for n in to_merge:
@@ -683,9 +683,9 @@ def merge_node(src_list, dst, shared, subgraph, readDatabase, variables, directi
             except:
                 print("The node %s is not in the digraph."%(n,))
 
-        return new_node_header, subgraph, readDatabase
+        return new_node_header, subgraph, readSequenceDb
     else:
-        return dst, subgraph, readDatabase
+        return dst, subgraph, readSequenceDb
 
 
 def merge_bifurcation(subgraph, readSequenceDb, variables):
