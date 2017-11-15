@@ -641,7 +641,7 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
                     tip_candidates = tip_candidates.union(merge_candidates)
 
                 # Merging the merge_node
-                merged_node, subgraph, readDatabase = merge_node(src_list=tip_candidates,
+                merged_node, subgraph, readDatabase = merge_node(downstreamNodes=tip_candidates,
                                                                  nodeToMerge=toMerge,
                                                                  nodeToMergeWith=node,
                                                                  subgraph=subgraph,
@@ -657,8 +657,8 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
 
         except:
             print("Error: Checking for nodes in subgraph have failed!")
-            import pdb;
-            pdb.set_trace()
+            #import pdb;
+            #pdb.set_trace()
             quit()
 
         # ad (VI.)
@@ -713,7 +713,7 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
                     tip_candidates = tip_candidates.union(merge_candidates)
 
                 # Merging the dst_nodes
-                merged_node, subgraph, readDatabase = merge_node(src_list=tip_candidates,
+                merged_node, subgraph, readDatabase = merge_node(downstreamNodes=tip_candidates,
                                                                  nodeToMerge=toMerge,
                                                                  nodeToMergeWith=node,
                                                                  subgraph=subgraph,
@@ -728,8 +728,6 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
                     collapse_candidate.add(node)
         except:
             print("Error: Checking for nodes in subgraph have failed!")
-            import pdb;
-            pdb.set_trace()
             quit()
 
         # ad (VI.)
@@ -840,7 +838,7 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     # Number of allowed mismatches.
     # TODO : Hardcoded mismatches
 
-    N_MIS = 3
+    N_MIS_percentage = 3
 
     # Database of read names that have been changed
     oldReadNames = {}
@@ -859,10 +857,10 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap'] \
         if direction == 1 else subgraph[nodeToMerge][nodeToMergeWith]['overlap']
     # Sequence that's overhanging from the node to be merged with
-    nodeToMergeRemaining = nodeToMergeSeq[nodeToMergeOverlap:] \
-        if direction == 1 else nodeToMergeSeq[:-nodeToMergeOverlap][::-1]
+    nodeToMergeOverlapSeq = nodeToMergeSeq[nodeToMergeOverlap:] \
+        if direction == 1 else nodeToMergeSeq[-nodeToMergeOverlap:]
 
-    new_sequence = readSequenceDb[nodeToMergeWith] + nodeToMergeRemaining
+    new_sequence = readSequenceDb[nodeToMergeWith] + nodeToMergeOverlapSeq
 
     if len(new_sequence) != len(readSequenceDb[nodeToMergeWith]) + len(nodeToMergeSeq) - nodeToMergeOverlap:
         print("Wrong sequence length")
@@ -874,10 +872,21 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     to_merge = []
 
     ###########################################################
-    # This part perhaps merges successors
+    # This part merges successors
     ###########################################################
 
     for downstreamNode in downstreamNodes:
+
+        ############################################################
+
+        # TODO : Determine the effect of this decision
+        # Function counting reads in header, splitting by '|'
+        # Number of reads in the src input (see above what that is)
+        # If nodes have very different number of reads, they will not be merged
+        if n_read_in_node(downstreamNode) >= 1.2 * n_read_in_node(nodeToMerge):
+            continue
+
+        #############################################################
 
         # if src in oldReadNames:
         #    print("{} have allready been dealt with.".format(src))
@@ -891,30 +900,28 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
             print("This tip has already been dealt with.")
             return None, subgraph, readSequenceDb
 
+
+        # OVERLAP OF THE TWO SEQUENCES
         # Determining the overlap (integer) of the node with the node to be merged with
         downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap'] if direction == 1 else subgraph[downstreamNode][nodeToMergeWith]['overlap']
         # Sequence that's overhanging from the node to be merged with
-        downstreamNodeRemaining = downstreamNodeSeq[downstreamNodeOverlap:] if direction == 1 else downstreamNodeSeq[:-downstreamNodeOverlap][::-1]
+        downstreamNodeOverlapSeq = downstreamNodeSeq[downstreamNodeOverlap:] if direction == 1 else downstreamNodeSeq[:downstreamNodeOverlap]
 
-        # TODO : Determine the effect of this decision
-        # Function counting reads in header, splitting by '|'
-        # Number of reads in the src input (see above what that is)
-        # If nodes have very different number of reads, they will not be merged
-        if n_read_in_node(downstreamNode) >= 1.2 * n_read_in_node(nodeToMerge):
-            continue
+        overlapLength = min(len(downstreamNodeOverlapSeq), len(nodeToMergeOverlapSeq))
+
+        N_MIS = (N_MIS_percentage/100)*overlapLength
 
         # Number of mismatches
         mis = 0
-        # Looping over the bases of overhanging part of the new read
+        # Looping over the bases of the overlapping parts of the nodes that are to be merged
         seqOver = []
-        for i in range(min(len(downstreamNodeRemaining), len(nodeToMergeRemaining))):
-            # If the src overhang and dst overhang don't match add a mismatch
-            seqOver.append(downstreamNodeRemaining[i])
-            if downstreamNodeRemaining[i] != nodeToMergeRemaining[i]:
+        for i in range(overlapLength)):
+            # If the downstreamNode overhang and nodeToMerge overhang don't match add a mismatch
+            seqOver.append(downstreamNodeOverlapSeq[i])
+            if downstreamNodeOverlapSeq[i] != nodeToMergeOverlapSeq[i]:
                 mis += 1
                 print('mis {}'.format(mis))
                 # If the number of mismatches is larger then defined above, break from the loop
-
                 if mis > 1:
                     print("Mismatches!")
                 if mis > N_MIS:
