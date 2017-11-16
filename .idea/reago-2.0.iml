@@ -4,7 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.6.1 Anaconda" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.6.1 (~/python/anaconda3/envs/python3.6conda/bin/python3.6)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">

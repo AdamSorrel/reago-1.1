@@ -854,17 +854,25 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
     nodeToMergeSeq = readSequenceDb[nodeToMerge]
     # retrieving overlap of the 'new' node with the node to merge with (shared)
-    nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap'] \
-        if direction == 1 else subgraph[nodeToMerge][nodeToMergeWith]['overlap']
+    #nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap'] \
+    #    if direction == 1 else subgraph[nodeToMerge][nodeToMergeWith]['overlap']
     # Sequence that's overhanging from the node to be merged with
-    nodeToMergeOverlapSeq = nodeToMergeSeq[nodeToMergeOverlap:] \
-        if direction == 1 else nodeToMergeSeq[-nodeToMergeOverlap:]
+    nodeToMergeOverlapSeq = nodeToMergeSeq[:nodeToMergeOverlap] \
+    #    if direction == 1 else nodeToMergeSeq[-nodeToMergeOverlap:]
+    nodeToMergeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:] \
+    #    if direction == 1 else nodeToMergeSeq[:-nodeToMergeOverlap]
 
-    new_sequence = readSequenceDb[nodeToMergeWith] + nodeToMergeOverlapSeq
+    # The two nodes that Overlap of the sequences of the two nodes is retrieved.
+    if direction == 1:
+        nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap']
+        nodeToMergeOverlapSeq = nodeToMergeSeq[:nodeToMergeOverlap]
+        nodeToMergeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:]
+    else:
+        nodeToMergeOverlap = subgraph[nodeToMerge][nodeToMergeWith]['overlap']
+        nodeToMergeOverlapSeq = nodeToMergeSeq[-nodeToMergeOverlap:]
+        nodeToMergeOverhangSeq = nodeToMergeSeq[:-nodeToMergeOverlap]
 
-    if len(new_sequence) != len(readSequenceDb[nodeToMergeWith]) + len(nodeToMergeSeq) - nodeToMergeOverlap:
-        print("Wrong sequence length")
-        quit()
+        new_sequence = nodeToMergeOverhangSeq + readSequenceDb[nodeToMergeWith]
 
     # Starting list of nodes to remove and merge
     to_remove = []
@@ -903,9 +911,18 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
 
         # OVERLAP OF THE TWO SEQUENCES
         # Determining the overlap (integer) of the node with the node to be merged with
-        downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap'] if direction == 1 else subgraph[downstreamNode][nodeToMergeWith]['overlap']
+        #downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap'] if direction == 1 else subgraph[downstreamNode][nodeToMergeWith]['overlap']
         # Sequence that's overhanging from the node to be merged with
-        downstreamNodeOverlapSeq = downstreamNodeSeq[downstreamNodeOverlap:] if direction == 1 else downstreamNodeSeq[:downstreamNodeOverlap]
+        #downstreamNodeOverlapSeq = downstreamNodeSeq[downstreamNodeOverlap:] if direction == 1 else downstreamNodeSeq[:downstreamNodeOverlap]
+
+        if direction == 1:
+            downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap']
+            downstreamNodeOverlapSeqq = downstreamNodeSeq[downstreamNodeOverlap:]
+            downstreamNodeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:]
+        else:
+            nodeToMergeOverlap = subgraph[nodeToMerge][nodeToMergeWith]['overlap']
+            nodeToMergeOverlapSeq = nodeToMergeSeq[-nodeToMergeOverlap:]
+            nodeToMergeOverhangSeq = nodeToMergeSeq[:-nodeToMergeOverlap]
 
         overlapLength = min(len(downstreamNodeOverlapSeq), len(nodeToMergeOverlapSeq))
 
@@ -915,17 +932,16 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
         mis = 0
         # Looping over the bases of the overlapping parts of the nodes that are to be merged
         seqOver = []
-        for i in range(overlapLength)):
+        for i in range(overlapLength):
             # If the downstreamNode overhang and nodeToMerge overhang don't match add a mismatch
             seqOver.append(downstreamNodeOverlapSeq[i])
             if downstreamNodeOverlapSeq[i] != nodeToMergeOverlapSeq[i]:
                 mis += 1
                 print('mis {}'.format(mis))
                 # If the number of mismatches is larger then defined above, break from the loop
-                if mis > 1:
-                    print("Mismatches!")
                 if mis > N_MIS:
                     break
+
         # TODO : This needs a revision. I really don't see the point of TIP_SIZE or why should this be relevant when there are many mismatches
         # If the number of mismatches is larger then allowed above
         if mis > N_MIS:
