@@ -3,6 +3,21 @@ import numpy as np
 from createRJGraph import create_graph_using_rj
 import networkx as nx
 
+######################
+import inspect
+######################
+
+def isclean(subgraph):
+    for node in subgraph.nodes():
+        if inspect.isbuiltin(node):
+            return False
+    return True
+
+def iscleanSet(inputSet):
+    for node in inputSet:
+        if inspect.isbuiltin(node):
+            return False
+    return True
 
 # app = Celery('subgraph', broker = 'amqp://localhost', backend='amqp')
 
@@ -52,12 +67,23 @@ def subgraph_treatment(subgraph, db, variables):
     full_genes = []
     scaffold_candidates = []
 
+    if not isclean(subgraph):
+        print("Not clean!")
+
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold
 
     readSequenceDb = correct_sequencing_error(subgraph, readSequenceDb)
 
+    if not isclean(subgraph):
+        print("Not clean!")
+
+
     # Correcting bases that are either 10 times less abundant or under the error_correction_treshold in a reverse sense
     readSequenceDb = correct_sequencing_error_reverse(subgraph, readSequenceDb)
+
+    if not isclean(subgraph):
+        print("Not clean!")
+
 
     # Dictionary of subgaph reads (already happened above)
     # subgraph_read_db = {}
@@ -69,33 +95,48 @@ def subgraph_treatment(subgraph, db, variables):
     # Generating a DiGraph with a readjoiner using a file 'graph'.
     subgraph = create_graph_using_rj("subgraph_temp", variables, readSequenceDb)
 
-    subgraph, readSequenceDb, readPositionDb = collapse_graph(subgraph=subgraph, \
-                                                              candidates=[], \
-                                                              readSequenceDb=readSequenceDb, \
-                                                              readPositionDb=readPositionDb, \
+    if not isclean(subgraph):
+        print("Not clean!")
+
+
+    subgraph, readSequenceDb, readPositionDb = collapse_graph(subgraph=subgraph,
+                                                              candidates=[],
+                                                              readSequenceDb=readSequenceDb,
+                                                              readPositionDb=readPositionDb,
                                                               purge_original_nodes=False)
+
+    if not isclean(subgraph):
+        print("Not clean!")
+
 
     # Merging bifurcation if there is less then N mistakes
     # I'm taking it out for now. Sounds a bit dodgy
-    subgraph, readSequenceDb, readPositionDb = merge_bifurcation(subgraph=subgraph, \
-                                                                 readSequenceDb=readSequenceDb, \
-                                                                 readPositionDb=readPositionDb, \
+    subgraph, readSequenceDb, readPositionDb = merge_bifurcation(subgraph=subgraph,
+                                                                 readSequenceDb=readSequenceDb,
+                                                                 readPositionDb=readPositionDb,
                                                                  variables=variables)
 
-    subgraph, readSequenceDb, readPositionDb = remove_bubble(subgraph=subgraph, \
-                                                             readSequenceDb=readSequenceDb, \
-                                                             readPositionDb=readPositionDb, \
+    if not isclean(subgraph):
+        print("Not clean!")
+
+    subgraph, readSequenceDb, readPositionDb = remove_bubble(subgraph=subgraph,
+                                                             readSequenceDb=readSequenceDb,
+                                                             readPositionDb=readPositionDb,
                                                              variables=variables)
 
+    if not isclean(subgraph):
+        print("Not clean!")
+
     # Removes a node that's shorter then 105% of read length, or does not have any branches in/out or has fewer then 5 reads
-    subgraph, readSequenceDb = remove_isolated_node(subgraph=subgraph, readSequenceDb=readSequenceDb,
+    subgraph, readSequenceDb = remove_isolated_node(subgraph=subgraph,
+                                                    readSequenceDb=readSequenceDb,
                                                     variables=variables)
 
     # Collapsing the subgraph that has been pre-treated by the above set of functions
-    subgraph, readSequenceDb, readPositionDb = collapse_graph(subgraph=subgraph, \
-                                                              candidates=[], \
-                                                              readSequenceDb=readSequenceDb, \
-                                                              readPositionDb=readPositionDb, \
+    subgraph, readSequenceDb, readPositionDb = collapse_graph(subgraph=subgraph,
+                                                              candidates=[],
+                                                              readSequenceDb=readSequenceDb,
+                                                              readPositionDb=readPositionDb,
                                                               purge_original_nodes=False)
 
     # TODO full_genes and scaffold_candidates must be moved to REDIS
@@ -254,8 +295,6 @@ def correct_sequencing_error(subgraph, readSequenceDb):
                             (multipleSequenceAlighnmentArray[:, columnPosition] != sortedBases[0][0]) & (
                                 multipleSequenceAlighnmentArray[:, columnPosition] != ''), columnPosition] = \
                         sortedBases[0][0]
-                    else:
-                        print("Too high a proportion of rare value!")
 
                         ###############################
                         # Do something
@@ -377,8 +416,8 @@ def correct_sequencing_error_reverse(subgraph, readSequenceDb):
 
             if sum(divergentBaseColPosition) > 0:  # If there are some columns retrieved
 
-                for columnPosition in np.where(divergentBaseColPosition == True)[
-                    0]:  # Looping through all columns that are divergent
+                for columnPosition in np.where(divergentBaseColPosition == True)[0]:
+                    # Looping through all columns that are divergent
                     basesDict = {'A': 0, 'T': 0, 'G': 0, 'C': 0}
                     column = multipleSequenceAlighnmentArray[:, columnPosition]
 
@@ -395,13 +434,6 @@ def correct_sequencing_error_reverse(subgraph, readSequenceDb):
                             (multipleSequenceAlighnmentArray[:, columnPosition] != sortedBases[0][0]) & (
                                 multipleSequenceAlighnmentArray[:, columnPosition] != ''), columnPosition] = \
                         sortedBases[0][0]
-                    else:
-                        print("Too high a proportion of rare value!")
-
-                        ###############################
-                        # Do something
-                        ###############################
-
 
 
                         # if divergentBaseCol.size != 0:
@@ -461,10 +493,10 @@ def collapse_graph(subgraph, candidates, readSequenceDb, readPositionDb, purge_o
             successors = subgraph.successors(node_to_combine)
 
             # If a divergent base is detected, the loop iteration is skipped
-            if check_divergent_bases(predecessor=predecessor,
-                                     node=node_to_combine,
-                                     graph=subgraph,
-                                     readSequenceDb=readSequenceDb) == False:
+            if not check_divergent_bases(predecessor=predecessor,
+                                         node=node_to_combine,
+                                         graph=subgraph,
+                                         readSequenceDb=readSequenceDb):
                 print("Divergent base: {}".format(node_to_combine))
                 nodes_to_combine.remove(node_to_combine)
                 continue
@@ -555,6 +587,9 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
     # Bifurcation happens in a subgraph due to two parts of sequence being divergent. This needs to be treated
     # delicately and the user must have full control over the merge behaviour.
 
+    if not isclean(subgraph):
+        print("Not clean!")
+
     while True:
         merged = False
 
@@ -562,105 +597,110 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
         # Starting a collapse_candidate as an empty set (unordered list with unique elements)
         collapse_candidate = set([])
 
-        try:
-            for node in subgraph.nodes():
-                # Looping through nodes of the subgraph and attempting to merge nodes that are bifurcating at the very
-                # egdge of the subgraph. (I.)_Firstly the program verifies whether the current node is
-                # still present in the subgraph as later nodes can be removed by 'merge node' function called below.
-                # (II.) Fork is defined as a node with 2 or more successors simultaneously if node doesn't have more then
-                # 2 successors, it's skipped (not a bifurcation). (III.) When a bifurcation has been identified, the tip
-                # candidates are searched as nodes that have out_degree equal to 0 (no nodes follow up). (IV.) Tip
-                # candidates are then removed from the set of bifurcating nodes. If there are subsequently no nodes left,
-                # the bifurcation occured at the end of the branch. The tip nodes will be re-examined and the node with
-                # the higher number of reads will be passed on. (V.) Nodes with the highest number of
-                # reads are selected and passed on the the 'merge_node' function. (VI.) The 'merge_node' function is
-                # returning a merged_node and that one is assigned as candidate for a 'graph_collapse' function input.
+        #try:
+        for node in subgraph.nodes():
+            # Looping through nodes of the subgraph and attempting to merge nodes that are bifurcating at the very
+            # egdge of the subgraph. (I.)_Firstly the program verifies whether the current node is
+            # still present in the subgraph as later nodes can be removed by 'merge node' function called below.
+            # (II.) Fork is defined as a node with 2 or more successors simultaneously if node doesn't have more then
+            # 2 successors, it's skipped (not a bifurcation). (III.) When a bifurcation has been identified, the tip
+            # candidates are searched as nodes that have out_degree equal to 0 (no nodes follow up). (IV.) Tip
+            # candidates are then removed from the set of bifurcating nodes. If there are subsequently no nodes left,
+            # the bifurcation occured at the end of the branch. The tip nodes will be re-examined and the node with
+            # the higher number of reads will be passed on. (V.) Nodes with the highest number of
+            # reads are selected and passed on the the 'merge_node' function. (VI.) The 'merge_node' function is
+            # returning a merged_node and that one is assigned as candidate for a 'graph_collapse' function input.
 
-                # Ad (I.)
-                # Searching for nodes that may have been removed in prior loops.
-                # Not sure how this ever happens, but it does. Probably for nodes removed during the cycle.
-                if node not in subgraph.nodes():
-                    print("node is (not) in subgraph nodes!")
-                    continue
+            # Ad (I.)
+            # Searching for nodes that may have been removed in prior loops.
+            # Not sure how this ever happens, but it does. Probably for nodes removed during the cycle.
+            if node not in subgraph.nodes():
+                print("node is (not) in subgraph nodes!")
+                continue
 
-                # ad (II.)
-                successors = set(subgraph.successors(node))
-                # If there is fewer then 2 successors, node is not a bifurcation.
-                if len(successors) < 2:
-                    continue
+            # ad (II.)
+            successors = set(subgraph.successors(node))
+            # If there is fewer then 2 successors, node is not a bifurcation.
+            if len(successors) < 2:
+                continue
 
-                # ad (III.)
-                # Retrieving the potential tips of the network.
-                # Tips are nodes that have no successors.
-                # In a network 1-2-3, 1 and 2 have out_degree == 1 and 3 have out_degree == 0
+            # ad (III.)
+            # Retrieving the potential tips of the network.
+            # Tips are nodes that have no successors.
+            # In a network 1-2-3, 1 and 2 have out_degree == 1 and 3 have out_degree == 0
 
-                ############################################
-                # This condition is most peculiar. If neither of the successors is a tip candidate, the loop will
-                # be terminated. Why would this be the case? Are we only interested in closing branching that is way
-                # too short?
-                ############################################
+            ############################################
+            # This condition is most peculiar. If neither of the successors is a tip candidate, the loop will
+            # be terminated. Why would this be the case? Are we only interested in closing branching that is way
+            # too short?
+            ############################################
 
-                tip_candidates = set([s for s in successors if subgraph.out_degree(s) == 0])
-                if len(tip_candidates) == 0:
-                    # If there are no tip candidates among the branching node's successors, skip the loop.
-                    print("No tip candidates")
-                    #import pdb; pdb.set_trace()
-                    continue
+            tip_candidates = set([s for s in successors if subgraph.out_degree(s) == 0])
+            if len(tip_candidates) == 0:
+                # If there are no tip candidates among the branching node's successors, skip the loop.
+                print("No tip candidates")
+                #import pdb; pdb.set_trace()
+                continue
 
-                # ad (IV.)
-                # Subtracting sets will remove elements of the subtrahend from minued (yields NOT-successors)
-                merge_candidates = successors - tip_candidates
+            # ad (IV.)
+            # Subtracting sets will remove elements of the subtrahend from minued (yields NOT-successors)
+            merge_candidates = successors - tip_candidates
 
-                # ad (V.)
-                # Node with the highest number of reads will be searched and passed to the 'merge_node' function.
+            # ad (V.)
+            # Node with the highest number of reads will be searched and passed to the 'merge_node' function.
 
-                # If, after subtraction of tip_candidates there are no dst candidates left, the bifurcation is at
-                # the tip only. In the opposite case,
+            # If, after subtraction of tip_candidates there are no dst candidates left, the bifurcation is at
+            # the tip only. In the opposite case,
 
-                # A custom function (see below) 'n_reads_in_node' determines the number of reads in the particular node.
-                if len(merge_candidates) == 0:
-                    # Looping through the dst nodes, remove a node with maximum reads
-                    # n_read_in_node is a custom function splits read header by '|' and counts sequence codes
-                    toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]
-                    # Removing the tip candidate from the tip_candidates
-                    tip_candidates.remove(toMerge)
-                else:
-                    # In this case, we are looping through the internal bifurcation members (excluding tips, which have
-                    # been removed earlier).
-                    toMerge = max([[n_read_in_node(d), d] for d in merge_candidates])[1]
-                    merge_candidates.remove(toMerge)  # remove dst
-                    # Looping over the merge_candidates list to check for tip nodes (out_degree == 0) after removing
-                    # the dst_node.
-                    # TODO: I don't understand how this should ever occur. Check if it ever happens!
-                    internal_candidates = [d for d in merge_candidates if subgraph.out_degree(d) == 0]
-                    if len(internal_candidates) > 0:
-                        print("Somehow we created a tip here.")
-                        print(merge_candidates)
-                        #import pdb;pdb.set_trace()
-                    # Merging the dst_candidates with the tip_candidates
-                    tip_candidates = tip_candidates.union(merge_candidates)
+            # A custom function (see below) 'n_reads_in_node' determines the number of reads in the particular node.
+            if len(merge_candidates) == 0:
+                # Looping through the dst nodes, remove a node with maximum reads
+                # n_read_in_node is a custom function splits read header by '|' and counts sequence codes
+                toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]
+                # Removing the tip candidate from the tip_candidates
+                tip_candidates.remove(toMerge)
+            else:
+                # In this case, we are looping through the internal bifurcation members (excluding tips, which have
+                # been removed earlier).
+                toMerge = max([[n_read_in_node(d), d] for d in merge_candidates])[1]
+                merge_candidates.remove(toMerge)  # remove dst
+                # Looping over the merge_candidates list to check for tip nodes (out_degree == 0) after removing
+                # the dst_node.
+                # TODO: I don't understand how this should ever occur. Check if it ever happens!
+                internal_candidates = [d for d in merge_candidates if subgraph.out_degree(d) == 0]
+                if len(internal_candidates) > 0:
+                    print("Somehow we created a tip here.")
+                    print(merge_candidates)
+                    #import pdb;pdb.set_trace()
+                # Merging the dst_candidates with the tip_candidates
+                tip_candidates = tip_candidates.union(merge_candidates)
 
-                # Merging the merge_node
-                merged_node, subgraph, readDatabase = merge_node(downstreamNodes=tip_candidates,
-                                                                 nodeToMerge=toMerge,
-                                                                 nodeToMergeWith=node,
-                                                                 subgraph=subgraph,
-                                                                 readSequenceDb=readSequenceDb,
-                                                                 variables=variables,
-                                                                 direction=1)
+            if not isclean(subgraph):
+                print("Not clean!")
 
-                # If the input isn't empty:
-                if merged_node:
-                    merged = True
-                    # Adding a node to the collapse candidate set
-                    collapse_candidate.add(node)
+            # Merging the merge_node
+            merged_node, subgraph, readSequenceDb, readPositionDb = merge_node(nodesToMergeWith=tip_candidates,
+                                                                               nodeToMerge=toMerge,
+                                                                               sharedNode=node,
+                                                                               subgraph=subgraph,
+                                                                               readSequenceDb=readSequenceDb,
+                                                                               readPositionDb=readPositionDb,
+                                                                               variables=variables,
+                                                                               direction=1)
 
-        except:
-            print("Error: Checking for nodes in subgraph have failed!")
+            # If the input isn't empty:
+            if merged_node:
+                merged = True
+                # Adding a node to the collapse candidate set
+                collapse_candidate.add(node)
+
+        #except:
+        #    print("Error: Checking for nodes in subgraph have failed!")
             #import pdb;
             #pdb.set_trace()
-            quit()
-
+        #    quit()
+        if not isclean(subgraph):
+            print("Not clean!")
         # ad (VI.)
         # Calling a custom collapse function
         subgraph, readDatabase, readPositionDb = collapse_graph(subgraph=subgraph,
@@ -674,61 +714,78 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
 
         collapse_candidate = set([])
         # Looping through nodes in the G network
-        try:
-            for node in subgraph.nodes():
+        for node in subgraph.nodes():
+            if not isclean(subgraph):
+                print("Not clean!")
+        #try:
+        for node in subgraph.nodes():
 
-                # ad (I.)
-                if node not in subgraph.nodes():
-                    continue
+            if not isclean(subgraph):
+                print("NOT CLEAN!")
+                break
 
-                # ad (II.) in opposite direction
-                predecessors = set(subgraph.predecessors(node))
-                if len(predecessors) < 2:
-                    continue
+            # ad (I.)
+            if node not in subgraph.nodes():
+                continue
 
-                # ad (III.)
-                tip_candidates = set(
-                    [p for p in predecessors if subgraph.in_degree(p) == 0])  # and G.out_degree(p) == 1])
-                if len(tip_candidates) == 0:
-                    continue
+            # ad (II.) in opposite direction
+            predecessors = set(subgraph.predecessors(node))
+            if len(predecessors) < 2:
+                continue
 
-                # ad (IV.)
-                internal_candidates = predecessors - tip_candidates
+            # ad (III.)
+            tip_candidates = set(
+                [p for p in predecessors if subgraph.in_degree(p) == 0])  # and G.out_degree(p) == 1])
+            if len(tip_candidates) == 0:
+                continue
 
-                # ad (V.)
-                if len(internal_candidates) == 0:
-                    # Looping through the dst nodes, remove a node with maximum reads
-                    # n_read_in_node is a custom function splits read header by '|' and counts sequence codes
-                    toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]
-                    # Removing the tip candidate from the tip_candidates
-                    tip_candidates.remove(toMerge)
-                else:
-                    # Looping through the dst nodes, remove a node with maximum reads
-                    # Custom function splits read header by '|' and counts sequence codes
-                    toMerge = max([[n_read_in_node(d), d] for d in merge_candidates])[1]  # only one dst node
-                    merge_candidates.remove(toMerge)  # remove dst
-                    # Looping over the dst_candidates list to find if there is a tip_candidate after removing the dst_node
-                    merge_candidates = [d for d in merge_candidates if subgraph.in_degree(
-                        d) == 0]  # and G.out_degree(d) == 1]  # only if its out-deg is 0, a node will be considered tip
-                    tip_candidates = tip_candidates.union(merge_candidates)
+            # ad (IV.)
+            merge_candidates = predecessors - tip_candidates
 
-                # Merging the dst_nodes
-                merged_node, subgraph, readDatabase = merge_node(downstreamNodes=tip_candidates,
-                                                                 nodeToMerge=toMerge,
-                                                                 nodeToMergeWith=node,
-                                                                 subgraph=subgraph,
-                                                                 variables=variables,
-                                                                 readSequenceDb=readSequenceDb,
-                                                                 direction=-1)
+            if not isclean(subgraph):
+                print("Not clean!")
 
-                # If the input isn't empty:
-                if merged_node:
-                    merged = True
-                    # Adding a node to the collapse candidate set
-                    collapse_candidate.add(node)
-        except:
-            print("Error: Checking for nodes in subgraph have failed!")
-            quit()
+            if not iscleanSet(predecessors):
+                print("Not clean!")
+
+            if not iscleanSet(tip_candidates):
+                print("Not clean!")
+
+            # ad (V.)
+            if len(merge_candidates) == 0:
+                # Looping through the dst nodes, remove a node with maximum reads
+                # n_read_in_node is a custom function splits read header by '|' and counts sequence codes
+                toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]
+                # Removing the tip candidate from the tip_candidates
+                tip_candidates.remove(toMerge)
+            else:
+                # Looping through the dst nodes, remove a node with maximum reads
+                # Custom function splits read header by '|' and counts sequence codes
+                toMerge = max([[n_read_in_node(d), d] for d in merge_candidates])[1]  # only one dst node
+                merge_candidates.remove(toMerge)  # remove dst
+                # Looping over the dst_candidates list to find if there is a tip_candidate after removing the dst_node
+                merge_candidates = [d for d in merge_candidates if subgraph.in_degree(
+                    d) == 0]  # and G.out_degree(d) == 1]  # only if its out-deg is 0, a node will be considered tip
+                tip_candidates = tip_candidates.union(merge_candidates)
+
+            # Merging the dst_nodes
+            merged_node, subgraph, readSequenceDb, readPositionDb = merge_node(nodesToMergeWith=tip_candidates,
+                                                                               nodeToMerge=toMerge,
+                                                                               sharedNode=node,
+                                                                               subgraph=subgraph,
+                                                                               variables=variables,
+                                                                               readSequenceDb=readSequenceDb,
+                                                                               readPositionDb=readPositionDb,
+                                                                               direction=-1)
+
+            # If the input isn't empty:
+            if merged_node:
+                merged = True
+                # Adding a node to the collapse candidate set
+                collapse_candidate.add(node)
+        #except:
+        #    print("Error: Checking for nodes in subgraph have failed!")
+        #    quit()
 
         # ad (VI.)
         # Calling a custom collapse function
@@ -789,13 +846,14 @@ def remove_bubble(subgraph, readSequenceDb, readPositionDb, variables):
             # If there are more then one successor coming after a node, we have a bubble!
             for to_node in [n for n in d if len(d[n]) > 1]:
                 # Merging the bubble
-                new_node, subgraph, readSequenceDb = merge_node(src_list=d[to_node][1:], \
-                                                                nodeToMerge=d[to_node][0], \
-                                                                nodeToMergeWith=node, \
-                                                                subgraph=subgraph, \
-                                                                readSequenceDb=readSequenceDb, \
-                                                                variables=variables, \
-                                                                direction=1)
+                new_node, subgraph, readSequenceDb, readPositionDb = merge_node(nodesToMergeWith=d[to_node][1:],
+                                                                                nodeToMerge=d[to_node][0],
+                                                                                sharedNode=node,
+                                                                                subgraph=subgraph,
+                                                                                readSequenceDb=readSequenceDb,
+                                                                                readPositionDb=readPositionDb,
+                                                                                variables=variables,
+                                                                                direction=1)
 
                 # If there is a result of merging, toggler is changed and the loop continues from the top
                 if new_node:
@@ -816,7 +874,7 @@ def remove_bubble(subgraph, readSequenceDb, readPositionDb, variables):
     return subgraph, readSequenceDb, readPositionDb
 
 
-def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequenceDb, variables, direction):
+def merge_node(nodesToMergeWith, nodeToMerge, sharedNode, subgraph, readSequenceDb, readPositionDb, variables, direction):
 
     ################################
     # Renaming variables
@@ -826,13 +884,13 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     # dst_overlap -> nodeToMergeOverlap
     # dst_remaining -> nodeToMergeRemaining
     ################################
-    # src_list -> downstreamNodes
+    # src_list -> downstreamNodes -> nodesToMergeWith
     # src -> downstreamNode
     # src_seq -> downstreamNodeSeq
-    # src_overlap -> downstreamNodeOverlap
-    # src_remaining -> downstreamNodeRemaining
+    # src_overlap -> downstreamNodeOverlap -> nodeToMergeWithOverlap
+    # src_remaining -> downstreamNodeRemaining -> downstreamNodeOverhangSeq
     # src_list, dst and shared look like this: '1581.2|3294.2;...'
-    # shared -> nodeToMergeWith
+    # shared -> nodeToMergeWith -> sharedNode
     ################################
 
     # Number of allowed mismatches.
@@ -853,26 +911,18 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     # dst is a header of merged sequences (e.g. '2579.2|2295.1|1042.1')
     # retrieving a sequence belonging to the header (dst_seq) (e.g. 'GATTCA...')
     nodeToMergeSeq = readSequenceDb[nodeToMerge]
-    # retrieving overlap of the 'new' node with the node to merge with (shared)
-    #nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap'] \
-    #    if direction == 1 else subgraph[nodeToMerge][nodeToMergeWith]['overlap']
-    # Sequence that's overhanging from the node to be merged with
-    nodeToMergeOverlapSeq = nodeToMergeSeq[:nodeToMergeOverlap] \
-    #    if direction == 1 else nodeToMergeSeq[-nodeToMergeOverlap:]
-    nodeToMergeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:] \
-    #    if direction == 1 else nodeToMergeSeq[:-nodeToMergeOverlap]
 
     # The two nodes that Overlap of the sequences of the two nodes is retrieved.
     if direction == 1:
-        nodeToMergeOverlap = subgraph[nodeToMergeWith][nodeToMerge]['overlap']
-        nodeToMergeOverlapSeq = nodeToMergeSeq[:nodeToMergeOverlap]
-        nodeToMergeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:]
+        shared_ToMergeOverlap = subgraph[sharedNode][nodeToMerge]['overlap']
+        shared_ToMergeOverlapSeq = nodeToMergeSeq[:shared_ToMergeOverlap]
+        nodeToMergeOverhangSeq = nodeToMergeSeq[shared_ToMergeOverlap:]
     else:
-        nodeToMergeOverlap = subgraph[nodeToMerge][nodeToMergeWith]['overlap']
-        nodeToMergeOverlapSeq = nodeToMergeSeq[-nodeToMergeOverlap:]
-        nodeToMergeOverhangSeq = nodeToMergeSeq[:-nodeToMergeOverlap]
+        shared_ToMergeOverlap = subgraph[nodeToMerge][sharedNode]['overlap']
+        shared_ToMergeOverlapSeq = nodeToMergeSeq[-shared_ToMergeOverlap:]
+        nodeToMergeOverhangSeq = nodeToMergeSeq[:-shared_ToMergeOverlap]
 
-        new_sequence = nodeToMergeOverhangSeq + readSequenceDb[nodeToMergeWith]
+        new_sequence = nodeToMergeOverhangSeq + readSequenceDb[sharedNode]
 
     # Starting list of nodes to remove and merge
     to_remove = []
@@ -883,7 +933,7 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
     # This part merges successors
     ###########################################################
 
-    for downstreamNode in downstreamNodes:
+    for nodeToMergeWith in nodesToMergeWith:
 
         ############################################################
 
@@ -891,7 +941,7 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
         # Function counting reads in header, splitting by '|'
         # Number of reads in the src input (see above what that is)
         # If nodes have very different number of reads, they will not be merged
-        if n_read_in_node(downstreamNode) >= 1.2 * n_read_in_node(nodeToMerge):
+        if n_read_in_node(nodeToMergeWith) >= 1.2 * n_read_in_node(nodeToMerge):
             continue
 
         #############################################################
@@ -902,157 +952,162 @@ def merge_node(downstreamNodes, nodeToMerge, nodeToMergeWith, subgraph, readSequ
 
         # Retrieving sequences of each of the listed nodes
         try:
-            downstreamNodeSeq = readSequenceDb[downstreamNode]
+            nodeToMergeWithSeq = readSequenceDb[nodeToMergeWith]
         except:
-            print("Current src: {}".format(downstreamNode))
+            print("Current src: {}".format(nodeToMergeWith))
             print("This tip has already been dealt with.")
             return None, subgraph, readSequenceDb
 
 
         # OVERLAP OF THE TWO SEQUENCES
         # Determining the overlap (integer) of the node with the node to be merged with
-        #downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap'] if direction == 1 else subgraph[downstreamNode][nodeToMergeWith]['overlap']
         # Sequence that's overhanging from the node to be merged with
-        #downstreamNodeOverlapSeq = downstreamNodeSeq[downstreamNodeOverlap:] if direction == 1 else downstreamNodeSeq[:downstreamNodeOverlap]
 
         if direction == 1:
-            downstreamNodeOverlap = subgraph[nodeToMergeWith][downstreamNode]['overlap']
-            downstreamNodeOverlapSeqq = downstreamNodeSeq[downstreamNodeOverlap:]
-            downstreamNodeOverhangSeq = nodeToMergeSeq[nodeToMergeOverlap:]
+            shared_ToMergeWithOverlap = subgraph[sharedNode][nodeToMergeWith]['overlap']
+            shared_ToMergeWithOverlapSeq = nodeToMergeWithSeq[shared_ToMergeWithOverlap:]
+            nodeToMergeWithOverhangSeq = nodeToMergeSeq[shared_ToMergeWithOverlap:]
         else:
-            nodeToMergeOverlap = subgraph[nodeToMerge][nodeToMergeWith]['overlap']
-            nodeToMergeOverlapSeq = nodeToMergeSeq[-nodeToMergeOverlap:]
-            nodeToMergeOverhangSeq = nodeToMergeSeq[:-nodeToMergeOverlap]
+            shared_ToMergeWithOverlap = subgraph[nodeToMergeWith][sharedNode]['overlap']
+            shared_ToMergeWithOverlapSeq = nodeToMergeWithSeq[-shared_ToMergeWithOverlap:]
+            nodeToMergeWithOverhangSeq = nodeToMergeWithSeq[:-shared_ToMergeWithOverlap]
 
-        overlapLength = min(len(downstreamNodeOverlapSeq), len(nodeToMergeOverlapSeq))
+        overhangsOverlapLength = min(len(nodeToMergeWithOverhangSeq), len(nodeToMergeOverhangSeq))
 
-        N_MIS = (N_MIS_percentage/100)*overlapLength
+        # Expressing the number of mismatches depending on the length of overlap and rounding the output to be
+        # exactly comparable in the future if statement (floats are not behaving well in an if statement).
+
+        N_MIS = (N_MIS_percentage/100)*overhangsOverlapLength + 1 ############### TODO: JUST FOR NOW
+        N_MIS = np.floor(N_MIS)
 
         # Number of mismatches
         mis = 0
         # Looping over the bases of the overlapping parts of the nodes that are to be merged
-        seqOver = []
-        for i in range(overlapLength):
-            # If the downstreamNode overhang and nodeToMerge overhang don't match add a mismatch
-            seqOver.append(downstreamNodeOverlapSeq[i])
-            if downstreamNodeOverlapSeq[i] != nodeToMergeOverlapSeq[i]:
-                mis += 1
-                print('mis {}'.format(mis))
-                # If the number of mismatches is larger then defined above, break from the loop
-                if mis > N_MIS:
-                    break
+        newOverlapSeq = []
 
-        # TODO : This needs a revision. I really don't see the point of TIP_SIZE or why should this be relevant when there are many mismatches
+        if direction == 1:
+            if n_read_in_node(nodeToMerge) > n_read_in_node(nodeToMergeWith):
+                dominant = nodeToMergeOverhangSeq
+                recessive = nodeToMergeWithOverhangSeq
+            else:
+                dominant = nodeToMergeWithOverhangSeq
+                recessive = nodeToMergeOverhangSeq
+
+            for d,r in zip(dominant, recessive):
+                newOverlapSeq.append(d)
+                if d != r:
+                    mis += 1
+                    if mis > N_MIS:
+                        break
+
+            # for i in range(overhangsOverlapLength):
+            #     # If the downstreamNode overhang and nodeToMerge overhang don't match add a mismatch
+            #     if n_read_in_node(nodeToMerge) > n_read_in_node(nodeToMergeWith):
+            #         seqOver.append(nodeToMerge[i])
+            #     else:
+            #         seqOver.append(nodeToMergeWithOverhangSeq[i])
+            #     if shared_ToMergeWithOverlapSeq[i] != nodeToMergeOverlapSeq[i]:
+            #         mis += 1
+            #         print('mis {}'.format(mis))
+            #         # If the number of mismatches is larger then defined above, break from the loop
+            #         if mis > N_MIS:
+            #             break
+        else:
+            if n_read_in_node(nodeToMerge) > n_read_in_node(nodeToMergeWith):
+                dominant = nodeToMergeOverhangSeq
+                recessive = nodeToMergeWithOverhangSeq
+            else:
+                dominant = nodeToMergeWithOverhangSeq
+                recessive = nodeToMergeOverhangSeq
+
+            for d,r in zip(reversed(dominant), reversed(recessive)):
+                newOverlapSeq.append(d)
+                if d != r:
+                    mis += 1
+                    if mis > N_MIS:
+                        break
+
+
+
+        # TODO : This needs a revision. No idea what's the point of TIP_SIZE or why this is relevant with mismatches
         # If the number of mismatches is larger then allowed above
         if mis > N_MIS:
             # If number of reads in node is larger then the tip size
-            if n_read_in_node(downstreamNode) < variables.TIP_SIZE:
-                to_remove.append(downstreamNode)
+            if n_read_in_node(nodeToMergeWith) < variables.TIP_SIZE:
+                to_remove.append(nodeToMergeWith)
             continue
 
         # Offset of the sequence to overlap
-        offset = nodeToMergeOverlap - downstreamNodeOverlap if direction == 1 else (
-        (len(nodeToMergeSeq) - nodeToMergeOverlap) - (len(downstreamNodeSeq) - downstreamNodeOverlap))
+        if direction == 1:
+            offset = shared_ToMergeOverlap - shared_ToMergeWithOverlap
+        else:
+            offset = ((len(nodeToMergeSeq) - shared_ToMergeOverlap) -
+                      (len(nodeToMergeWithSeq) - shared_ToMergeWithOverlap))
 
         if offset < -1000:
             print("Offset too high!!")
 
-        # Adding the offset to the read position (of each read separately?)
-        new_read_position = str(int(downstreamNode.split(';')[2].split('=')[1]) + offset)
-        new_read = downstreamNode.split(';')[0] + ';' + downstreamNode.split(';')[1] + ';' + 'read_position=' + new_read_position + ';' + \
-                   downstreamNode.split(';')[3]
-
-        oldReadNames[new_read] = downstreamNode
-
-        ##################################################
-        # Relabelling a node in the subgraph network
-        ##################################################
-        mapping = {oldReadNames[new_read]: new_read}
-        subgraph = nx.relabel_nodes(subgraph, mapping)
-
-        if len(oldReadNames) > 1:
-            print("oldReadNames dictionary length:{}".format(len(oldReadNames)))
-
-        # Saving the new read header with the old sequence
-        readSequenceDb[new_read] = readSequenceDb.pop(downstreamNode) + src_remaining
+        for readID in nodeToMergeWith.split("|"):
+            readPositionDb[readID] += offset
 
         # Appending the new sequence to the list to merge
-        to_merge.append(new_read)
+        to_merge.append(nodeToMergeWith)
 
     # Should there be nothing to remove or merge and finish the function
     if not to_remove + to_merge:
-        return None, subgraph, readSequenceDb
+        return None, subgraph, readSequenceDb, readPositionDb
 
     # Looping throught the list of nodes to remove
     for n in to_remove:
         # Removing node from the network
         subgraph.remove_node(n)
 
-    # Merging old and new nodes
-    # e.g. dst : '719.1;len=100;read_position=0;template_position=765,853'
-    #      to_merge : '1758.2;len=100;read_position=4;template_position=769,857'
     if to_merge:
-        dst_split = nodeToMerge.split(';')
-        name = dst_split[0]
-        length = int(dst_split[1].split('=')[1])
-        read_position = dst_split[2].split('=')[1]
-        template_position = dst_split[3].split('=')[1]
+        new_node = nodeToMerge + "|" + "|".join(to_merge)
+        subgraph = nx.relabel_nodes(subgraph, {nodeToMerge: new_node}, copy=False)
+        readSequenceDb[new_node] = readSequenceDb.pop(nodeToMerge)
 
-        for merge in to_merge:
-            merge_split = merge.split(';')
-            merge_name = merge_split[0]
-            merge_read_position = int(merge_split[2].split('=')[1])
-            merge_template_position = merge_split[3].split('=')[1]
-
-            name = name + '|' + merge_name
-            length = length + merge_read_position
-            template_position = str(
-                min(int(template_position.split(',')[0]), int(merge_template_position.split(',')[0]))) + ',' + \
-                                str(max(int(template_position.split(',')[1]),
-                                        int(merge_template_position.split(',')[1])))
-
-            new_node_header = name + \
-                              ';len=' + str(length) + \
-                              ';read_position=' + str(min(int(read_position), merge_read_position)) + \
-                              ';template_position=' + template_position
+        for n in to_merge:
+            subgraph.remove_node(n)
 
         # Changing the label (header) in the network
-        subgraph = nx.relabel_nodes(subgraph, {nodeToMerge: new_node_header}, copy=False)
-
-        # Adding the new node in the final database (THAT HAS ALREADY BEEN DONE!)
-        readSequenceDb[new_node_header] = readSequenceDb.pop(nodeToMerge)
+        # subgraph = nx.relabel_nodes(subgraph, {nodeToMerge: new_node_header}, copy=False)
+        #
+        # # Adding the new node in the final database (THAT HAS ALREADY BEEN DONE!)
+        # readSequenceDb[new_node_header] = readSequenceDb.pop(nodeToMerge)
 
         # Looping through the list of nodes to merge
         for n in to_merge:
             # Removing a node from the network
             try:
-                subgraph.remove_node(oldReadNames[n])
+                subgraph.remove_node(n)
             except:
                 print("The node %s is not in the digraph." % (n,))
 
-        return new_node_header, subgraph, readSequenceDb
+        #return None, subgraph, readSequenceDb, readPositionDb
+        return new_node, subgraph, readSequenceDb, readPositionDb
     else:
-        return nodeToMerge, subgraph, readSequenceDb
+        return nodeToMerge, subgraph, readSequenceDb, readPositionDb
 
 
 def n_read_in_node(node):
     # Retreaving the number of reads in a given node
-    read_name_list = node.split(";")[0]
+    # read_name_list = node.split(";")[0]
     read_name_list = node.split("|")
     return len(read_name_list)
 
 
-def remove_isolated_node(subgraph, readDatabase, variables):
+def remove_isolated_node(subgraph, readSequenceDb, variables):
     for node in subgraph.nodes():
         # There are not in and out degrees to the node and the number of reads present is lower then 5
         # (e.g. there are 3 reads in '1107.2|1611.2|2403.1')
         # OR if the read length is shorter then 105% of the input read lenth (-l option)
         if not subgraph.in_degree(node) and not subgraph.out_degree(node) and \
-                (n_read_in_node(node) < 5 or len(readDatabase[node]) < variables.READ_LEN * 1.05):
+                (n_read_in_node(node) < 5 or len(readSequenceDb[node]) < variables.READ_LEN * 1.05):
             # Remove the node from the network
             subgraph.remove_node(node)
 
-    return subgraph, readDatabase
+    return subgraph, readSequenceDb
 
 
 def get_branching_aid(subgraph_orig):
@@ -1177,7 +1232,7 @@ def get_start_end_pos(path, contig):
     return minStartPosition, maxEndPosition
 
 
-def get_assemblie(subgraph, readDatabase, variables):
+def get_assemblie(subgraph, readSequenceDb, variables):
     # Branching aid loops through network, finding tips (starting nodes) and appends nodes that follow them to a dictionary entry
     future_nodes = get_branching_aid(subgraph)
     full_genes = []
@@ -1187,7 +1242,7 @@ def get_assemblie(subgraph, readDatabase, variables):
     for node in starting_nodes:
         paths = get_all_path(subgraph, future_nodes, [node], [], variables)
         for path in paths:
-            contig = get_contig(path, subgraph, readDatabase)
+            contig = get_contig(path, subgraph, readSequenceDb)
             if len(contig) >= variables.FULL_LENGTH:
                 if variables.NEED_DEFLANK:
                     # start_pos = min([g.r_pos[r][0] - g.read_position_db[r] for r in path[0].split("|")])
@@ -1202,7 +1257,7 @@ def get_assemblie(subgraph, readDatabase, variables):
                 if len(contig) > 120:
                     scaffold_candidates.append([path, startPosition, endPosition, contig])
 
-    return full_genes, scaffold_candidates, readDatabase
+    return full_genes, scaffold_candidates, readSequenceDb
 
 
 def check_divergent_bases(predecessor, node, graph, readSequenceDb):
