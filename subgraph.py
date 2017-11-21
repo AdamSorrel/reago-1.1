@@ -586,9 +586,13 @@ def collapse_graph(subgraph, candidates, readSequenceDb, readPositionDb, purge_o
 def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
     # Bifurcation happens in a subgraph due to two parts of sequence being divergent. This needs to be treated
     # delicately and the user must have full control over the merge behaviour.
-
-    if not isclean(subgraph):
-        print("Not clean!")
+    #
+    #                  node2 (2 reads) - ... - node4 (1 read)
+    #                / ...ATGGC...             ...GGCT...
+    # node1 (3 reads)
+    #                \
+    #                  node3 (5 reads) - ... - node5 (3 reads)
+    #                  ...ATCCC...             ...GCCT...
 
     while True:
         merged = False
@@ -623,6 +627,13 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
             # If there is fewer then 2 successors, node is not a bifurcation.
             if len(successors) < 2:
                 continue
+            #                  node2 (2 reads) ...
+            #                /
+            # node1 (3 reads)
+            #               |\
+            #               |  node3 (5 reads) ...
+            #               |
+            #               node4 (1 read) ...
 
             # ad (III.)
             # Retrieving the potential tips of the network.
@@ -638,13 +649,13 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
             tip_candidates = set([s for s in successors if subgraph.out_degree(s) == 0])
             if len(tip_candidates) == 0:
                 # If there are no tip candidates among the branching node's successors, skip the loop.
-                print("No tip candidates")
-                #import pdb; pdb.set_trace()
+                print("no tip candidates")
                 continue
 
             # ad (IV.)
-            # Subtracting sets will remove elements of the subtrahend from minued (yields NOT-successors)
-            merge_candidates = successors - tip_candidates
+            # Subtracting sets will remove elements of the subtrahend from minued (yields NOT-successors).
+            # Checking for nodes that are not bifurcating at the end of the graph (tip nodes)
+            internal_nodes = successors - tip_candidates
 
             # ad (V.)
             # Node with the highest number of reads will be searched and passed to the 'merge_node' function.
@@ -653,30 +664,36 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
             # the tip only. In the opposite case,
 
             # A custom function (see below) 'n_reads_in_node' determines the number of reads in the particular node.
-            if len(merge_candidates) == 0:
-                # Looping through the dst nodes, remove a node with maximum reads
+
+            if len(internal_nodes) == 0:
+                #                  node2 (2 reads)
+                #                /
+                # node1 (3 reads)
+                #                \
+                #                  node3 (5 reads)
+                #
                 # n_read_in_node is a custom function splits read header by '|' and counts sequence codes
-                toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]
+                toMerge = max([[n_read_in_node(t), t] for t in tip_candidates])[1]  # e.g. 'node3'
                 # Removing the tip candidate from the tip_candidates
-                tip_candidates.remove(toMerge)
+                tip_candidates.remove(toMerge)  # e.g. ['node2', 'node3'] - 'node3' = 'node2'
             else:
+                #                  node2 (2 reads) - node4 (1 read)
+                #                /
+                # node1 (3 reads)
+                #               |\
+                #               |  node3 (5 reads)
+                #               |
+                #               node5 (3 reads) - node6 (1 read)
+                #
                 # In this case, we are looping through the internal bifurcation members (excluding tips, which have
-                # been removed earlier).
-                toMerge = max([[n_read_in_node(d), d] for d in merge_candidates])[1]
-                merge_candidates.remove(toMerge)  # remove dst
+                # been removed earlier) : e.g. ['node2', 'node5']
+                toMerge = max([[n_read_in_node(d), d] for d in internal_nodes])[1]  # e.g. 'node5'
+                internal_nodes.remove(toMerge)  # remove dst    e.g. 'node2'
                 # Looping over the merge_candidates list to check for tip nodes (out_degree == 0) after removing
                 # the dst_node.
-                # TODO: I don't understand how this should ever occur. Check if it ever happens!
-                internal_candidates = [d for d in merge_candidates if subgraph.out_degree(d) == 0]
-                if len(internal_candidates) > 0:
-                    print("Somehow we created a tip here.")
-                    print(merge_candidates)
-                    #import pdb;pdb.set_trace()
+                internal_candidates = [d for d in internal_nodes if subgraph.out_degree(d) == 0]
                 # Merging the dst_candidates with the tip_candidates
-                tip_candidates = tip_candidates.union(merge_candidates)
-
-            if not isclean(subgraph):
-                print("Not clean!")
+                tip_candidates = tip_candidates.union(internal_candidates)
 
             # Merging the merge_node
             merged_node, subgraph, readSequenceDb, readPositionDb = merge_node(nodesToMergeWith=tip_candidates,
@@ -714,15 +731,9 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
 
         collapse_candidate = set([])
         # Looping through nodes in the G network
-        for node in subgraph.nodes():
-            if not isclean(subgraph):
-                print("Not clean!")
+
         #try:
         for node in subgraph.nodes():
-
-            if not isclean(subgraph):
-                print("NOT CLEAN!")
-                break
 
             # ad (I.)
             if node not in subgraph.nodes():
