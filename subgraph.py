@@ -716,8 +716,7 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
             #import pdb;
             #pdb.set_trace()
         #    quit()
-        if not isclean(subgraph):
-            print("Not clean!")
+
         # ad (VI.)
         # Calling a custom collapse function
         subgraph, readDatabase, readPositionDb = collapse_graph(subgraph=subgraph,
@@ -725,6 +724,9 @@ def merge_bifurcation(subgraph, readSequenceDb, readPositionDb, variables):
                                                                 readSequenceDb=readSequenceDb,
                                                                 readPositionDb=readPositionDb,
                                                                 purge_original_nodes=False)
+        for node in subgraph.nodes():
+            if node not in subgraph.nodes():
+                continue
 
         # fork in
         # Repeating the same procedure from before in the opposite direction.
