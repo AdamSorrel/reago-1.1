@@ -7,6 +7,8 @@ import networkx as nx
 import inspect
 ######################
 
+from subgraphPlot import subgraphPlotBokeh
+
 def isclean(subgraph):
     for node in subgraph.nodes():
         if inspect.isbuiltin(node):
